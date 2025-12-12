@@ -26,7 +26,7 @@ class Checklist(BaseModel):
 
     id: str
     label: str
-    type: str = Field(default="code", pattern="^(code|test|infra|doc|bug|other)$")
+    type: str = Field(default="code", pattern="^(code|test|infra|doc|bug|design|other)$")
     source: Optional[str] = None
     severity: Optional[str] = None
     urgent: bool = False
