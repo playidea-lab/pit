@@ -1,0 +1,71 @@
+id: F-0002
+project_id: pit
+title: 문서 통합 및 정리
+type: feature
+status: merged
+priority: medium
+
+created_at: 2025-12-12T14:00:00+09:00
+updated_at: 2025-12-12T16:00:00+09:00
+
+owner: changmin
+
+context: >
+  산재한 10개의 마크다운 문서를 7개+README로 통합하여
+  중복을 제거하고 구조를 개선한다.
+  docs/ 폴더로 이동하여 프로젝트 구조를 정리한다.
+
+requirements:
+  - PIT_USAGE_GUIDE_PM.md + PIT_USAGE_GUIDE_DEV.md 통합
+  - PROJECT_DEFINITION.md + PIT_PRD.md 통합
+  - docs/ 폴더로 문서 이동
+  - README.md 생성
+
+acceptance_criteria:
+  - 문서 수 10개 → 7개 + README
+  - 중복 내용 40% 이상 제거
+  - docs/ 폴더에 모든 설계 문서 위치
+  - README로 프로젝트 진입점 제공
+
+checklist:
+  - id: T1
+    label: docs/ 폴더 생성
+    type: infra
+    done: true
+    done_at: 2025-12-12T15:30:00+09:00
+
+  - id: T2
+    label: PIT_USAGE_GUIDE.md 통합 (PM + DEV)
+    type: doc
+    path_hint: docs/PIT_USAGE_GUIDE.md
+    done: true
+    done_at: 2025-12-12T15:35:00+09:00
+
+  - id: T3
+    label: PIT_OVERVIEW.md 통합 (PROJECT_DEFINITION + PRD)
+    type: doc
+    path_hint: docs/PIT_OVERVIEW.md
+    done: true
+    done_at: 2025-12-12T15:40:00+09:00
+
+  - id: T4
+    label: 기존 문서 docs/로 이동
+    type: doc
+    done: true
+    done_at: 2025-12-12T15:42:00+09:00
+
+  - id: T5
+    label: README.md 생성
+    type: doc
+    path_hint: README.md
+    done: true
+    done_at: 2025-12-12T15:45:00+09:00
+
+  - id: T6
+    label: 원본 문서 삭제 (통합 완료된 것들)
+    type: doc
+    done: true
+    done_at: 2025-12-12T15:47:00+09:00
+
+logs:
+  - 2025-12-12-session-001
