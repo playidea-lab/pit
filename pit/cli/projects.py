@@ -4,8 +4,10 @@ import json
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
+from pit.core.context import find_pit_root, get_project_context
 from pit.loaders import list_projects
 
 app = typer.Typer(help="Project management commands")
@@ -16,11 +18,11 @@ console = Console()
 def list_cmd(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
-    """List all projects"""
+    """List all projects (현재 .pit/ 프로젝트)"""
     projects = list_projects()
 
     if not projects:
-        console.print("[yellow]No projects found.[/yellow]")
+        console.print("[yellow]No projects found. Use 'pit init' to initialize.[/yellow]")
         raise typer.Exit(0)
 
     if json_output:
@@ -43,3 +45,33 @@ def list_cmd(
         )
 
     console.print(table)
+
+
+@app.command("info")
+def info(
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+):
+    """현재 프로젝트 정보 표시"""
+    pit_root = find_pit_root()
+    if not pit_root:
+        console.print("[red]pit 프로젝트를 찾을 수 없습니다. 'pit init'으로 초기화하세요.[/red]")
+        raise typer.Exit(1)
+
+    context = get_project_context()
+    if not context:
+        console.print("[red]프로젝트 설정을 읽을 수 없습니다.[/red]")
+        raise typer.Exit(1)
+
+    if json_output:
+        console.print(json.dumps(context, indent=2, ensure_ascii=False, default=str))
+        return
+
+    console.print(Panel(
+        f"[bold cyan]{context.get('id', 'unknown')}[/bold cyan] - {context.get('name', 'Unnamed')}\n\n"
+        f"[bold]Description:[/bold] {context.get('description', '-')}\n"
+        f"[bold]Status:[/bold] {context.get('status', '-')}\n"
+        f"[bold]Owner:[/bold] {context.get('owner', '-')}\n"
+        f"[bold]Location:[/bold] {pit_root.parent}",
+        title="Current Project",
+        border_style="cyan",
+    ))

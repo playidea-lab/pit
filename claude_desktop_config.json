@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pit": {
+      "command": "uv",
+      "args": ["run", "--directory", "/Users/changmin/git/pit", "python", "-m", "pit.mcp_server"],
+      "env": {
+        "PIT_ROOT": "/Users/changmin/git/pit"
+      }
+    }
+  }
+}

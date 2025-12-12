@@ -15,6 +15,9 @@ dependencies = [
     "rich>=13.0.0",
     "pydantic>=2.0.0",
     "pyyaml>=6.0",
+    "anthropic>=0.75.0",
+    "python-dotenv>=1.2.1",
+    "mcp>=1.23.3",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +29,7 @@ dev = [
 
 [project.scripts]
 pit = "pit.cli.main:app"
+pit-mcp = "pit.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]

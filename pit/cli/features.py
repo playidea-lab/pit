@@ -9,11 +9,25 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from pit.core.context import get_project_id
 from pit.loaders import get_feature, get_next_feature_id, list_features, save_feature
 from pit.models.feature import Checklist, Feature
 
 app = typer.Typer(help="Feature management commands")
 console = Console()
+
+
+def get_current_project_id(project_id: str | None = None) -> str:
+    """Get project ID from argument or context"""
+    if project_id:
+        return project_id
+
+    ctx_project = get_project_id()
+    if ctx_project:
+        return ctx_project
+
+    console.print("[red]프로젝트를 찾을 수 없습니다. 'pit init'으로 초기화하거나 --project 옵션을 사용하세요.[/red]")
+    raise typer.Exit(1)
 
 
 def status_color(status: str) -> str:
@@ -41,14 +55,20 @@ def priority_color(priority: str) -> str:
 
 @app.command("list")
 def list_cmd(
-    project_id: str = typer.Argument(..., help="Project ID"),
+    project_id: str = typer.Argument(None, help="Project ID (선택, 없으면 현재 .pit 프로젝트)"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List all features for a project"""
-    features = list_features(project_id)
+    # .pit/ 폴더 기반이면 project_id 없이도 동작
+    if project_id:
+        features = list_features(project_id)
+        proj_name = project_id
+    else:
+        features = list_features()  # 현재 .pit/ 프로젝트
+        proj_name = get_project_id() or "current"
 
     if not features:
-        console.print(f"[yellow]No features found for project '{project_id}'.[/yellow]")
+        console.print(f"[yellow]No features found for project '{proj_name}'.[/yellow]")
         raise typer.Exit(0)
 
     if json_output:
@@ -56,7 +76,7 @@ def list_cmd(
         console.print(json.dumps(data, indent=2, ensure_ascii=False))
         return
 
-    table = Table(title=f"Features - {project_id}")
+    table = Table(title=f"Features - {proj_name}")
     table.add_column("ID", style="cyan")
     table.add_column("Title", style="white")
     table.add_column("Status")
@@ -80,15 +100,18 @@ def list_cmd(
 
 @app.command("show")
 def show(
-    project_id: str = typer.Argument(..., help="Project ID"),
     feature_id: str = typer.Argument(..., help="Feature ID"),
+    project_id: str = typer.Option(None, "--project", "-p", help="Project ID (선택)"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show feature details"""
-    feature = get_feature(project_id, feature_id)
+    if project_id:
+        feature = get_feature(project_id, feature_id)
+    else:
+        feature = get_feature(feature_id=feature_id)
 
     if not feature:
-        console.print(f"[red]Feature '{feature_id}' not found in project '{project_id}'.[/red]")
+        console.print(f"[red]Feature '{feature_id}' not found.[/red]")
         raise typer.Exit(1)
 
     if json_output:
@@ -156,12 +179,15 @@ def show(
 
 @app.command("create")
 def create(
-    project_id: str = typer.Argument(..., help="Project ID"),
-    title: str = typer.Option(None, "--title", "-t", help="Feature title"),
-    priority: str = typer.Option("medium", "--priority", "-p", help="Priority (low/medium/high/critical)"),
+    title: str = typer.Argument(None, help="Feature title"),
+    project_id: str = typer.Option(None, "--project", "-p", help="Project ID (선택)"),
+    priority: str = typer.Option("medium", "--priority", help="Priority (low/medium/high/critical)"),
     interactive: bool = typer.Option(True, "--interactive/--no-interactive", "-i", help="Interactive mode"),
 ):
     """Create a new feature"""
+    # 프로젝트 ID 결정
+    proj_id = get_current_project_id(project_id)
+
     if interactive and not title:
         title = typer.prompt("Feature title")
 
@@ -169,7 +195,7 @@ def create(
         console.print("[red]Title is required[/red]")
         raise typer.Exit(1)
 
-    feature_id = get_next_feature_id(project_id)
+    feature_id = get_next_feature_id() if not project_id else get_next_feature_id(project_id)
 
     # Interactive task input
     checklist = []
@@ -185,7 +211,7 @@ def create(
 
     feature = Feature(
         id=feature_id,
-        project_id=project_id,
+        project_id=proj_id,
         title=title,
         status="planned",
         priority=priority,

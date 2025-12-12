@@ -1,0 +1,92 @@
+id: F-0001
+project_id: pit
+title: pit CLI MVP
+type: feature
+status: merged
+priority: high
+
+created_at: 2025-12-12T10:00:00+09:00
+updated_at: 2025-12-12T16:30:00+09:00
+
+owner: changmin
+
+context: >
+  pit 시스템의 첫 번째 구현 단계.
+  파일 기반 데이터(project.yaml, features/*.yaml)를 읽어서
+  CLI로 조회할 수 있는 최소 기능을 구현한다.
+  dogfooding을 통해 pit 자체를 pit로 관리하는 것이 목표.
+
+requirements:
+  - Typer + Rich 기반 CLI 구현
+  - projects list 명령어 (프로젝트 목록 조회)
+  - features list 명령어 (특정 프로젝트의 Feature 목록)
+  - feature show 명령어 (Feature 상세 조회)
+  - Pydantic v2 기반 데이터 모델 (Project, Feature, Checklist)
+  - YAML 파일 파싱 및 검증
+
+acceptance_criteria:
+  - pit projects list 실행 시 projects/ 하위 프로젝트 목록 출력
+  - pit features list pit 실행 시 pit 프로젝트의 Feature 목록 출력
+  - pit feature show pit F-0001 실행 시 해당 Feature 상세 정보 출력
+  - --json 옵션으로 JSON 출력 지원
+  - pit 프로젝트 자체를 pit로 관리하며 dogfooding 진행
+
+checklist:
+  - id: T1
+    label: pyproject.toml 및 프로젝트 구조 설정
+    type: infra
+    done: true
+    done_at: 2025-12-12T16:10:00+09:00
+
+  - id: T2
+    label: Pydantic 데이터 모델 구현 (Project, Feature, Checklist)
+    type: code
+    path_hint: pit/models/
+    done: true
+    done_at: 2025-12-12T16:15:00+09:00
+
+  - id: T3
+    label: YAML 파일 로더 구현
+    type: code
+    path_hint: pit/loaders/
+    done: true
+    done_at: 2025-12-12T16:18:00+09:00
+
+  - id: T4
+    label: pit projects list 명령어 구현
+    type: code
+    path_hint: pit/cli/projects.py
+    done: true
+    done_at: 2025-12-12T16:22:00+09:00
+
+  - id: T5
+    label: pit features list 명령어 구현
+    type: code
+    path_hint: pit/cli/features.py
+    done: true
+    done_at: 2025-12-12T16:25:00+09:00
+
+  - id: T6
+    label: pit feature show 명령어 구현
+    type: code
+    path_hint: pit/cli/features.py
+    done: true
+    done_at: 2025-12-12T16:25:00+09:00
+
+  - id: T7
+    label: --json 출력 옵션 구현
+    type: code
+    done: true
+    done_at: 2025-12-12T16:25:00+09:00
+
+  - id: T8
+    label: dogfooding - pit 자체를 pit로 관리
+    type: doc
+    done: true
+    done_at: 2025-12-12T16:30:00+09:00
+
+decisions:
+  - D-0001
+
+logs:
+  - 2025-12-12-session-001

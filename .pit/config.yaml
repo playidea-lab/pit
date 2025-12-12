@@ -1,0 +1,10 @@
+id: pit
+name: pit – Product / Idea Tracker
+description: >
+  기획/아이디어/결정/체크리스트를 Git처럼 버전 관리하고,
+  git의 실제 코드와 비교하여 "기획 대비 개발 정합도"를 평가하는
+  PM용 관제 시스템.
+status: active
+owner: changmin
+created_at: 2025-12-12T10:00:00+09:00
+updated_at: 2025-12-12T21:00:00+09:00

@@ -22,14 +22,34 @@ app.add_typer(git_app, name="git")
 # Shortcut: pit feature -> pit features show
 @app.command("feature")
 def feature_show(
-    project_id: str = typer.Argument(..., help="Project ID"),
     feature_id: str = typer.Argument(..., help="Feature ID"),
+    project_id: str = typer.Option(None, "--project", "-p", help="Project ID (선택)"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show feature details (shortcut for 'features show')"""
     from pit.cli.features import show
 
-    show(project_id, feature_id, json_output)
+    show(feature_id, project_id, json_output)
+
+
+@app.command("chat")
+def chat():
+    """Start interactive chat with pit AI assistant"""
+    from pit.cli.chat import chat_main
+
+    chat_main()
+
+
+@app.command("init")
+def init(
+    name: str = typer.Option(None, "--name", "-n", help="프로젝트 이름"),
+    description: str = typer.Option(None, "--description", "-d", help="프로젝트 설명"),
+    owner: str = typer.Option(None, "--owner", "-o", help="프로젝트 소유자"),
+):
+    """현재 디렉토리에 pit 프로젝트를 초기화합니다."""
+    from pit.cli.init import init_project
+
+    init_project(name, description, owner)
 
 
 if __name__ == "__main__":
