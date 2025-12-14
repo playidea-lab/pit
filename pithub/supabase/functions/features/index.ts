@@ -13,6 +13,7 @@ import {
 import {
   listFeatureFiles,
   getFeatureFile,
+  getGitHubToken,
 } from "../_shared/github.ts";
 
 interface Feature {
@@ -58,9 +59,10 @@ serve(async (req: Request) => {
   const repo = pathParts[2];
   const featureId = pathParts[3];
 
-  // Authorization 헤더에서 토큰 추출 (선택적)
+  // 환경변수 또는 Authorization 헤더에서 토큰 추출
   const authHeader = req.headers.get("authorization");
-  const token = authHeader?.replace("Bearer ", "");
+  const userToken = authHeader?.replace("Bearer ", "");
+  const token = getGitHubToken() || userToken;
 
   // branch 쿼리 파라미터
   const branch = url.searchParams.get("branch") || "main";

@@ -4,6 +4,13 @@
 
 const GITHUB_API_BASE = "https://api.github.com";
 
+/**
+ * 환경변수에서 GitHub 토큰 가져오기
+ */
+export function getGitHubToken(): string | undefined {
+  return Deno.env.get("GITHUB_TOKEN");
+}
+
 export interface GitHubFile {
   name: string;
   path: string;

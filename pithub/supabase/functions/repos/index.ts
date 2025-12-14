@@ -16,6 +16,7 @@ import {
   listFeatureFiles,
   listDecisionFiles,
   getFeatureFile,
+  getGitHubToken,
 } from "../_shared/github.ts";
 
 serve(async (req: Request) => {
@@ -35,9 +36,11 @@ serve(async (req: Request) => {
   const repo = pathParts[2];
   const isSummary = pathParts[3] === "summary";
 
-  // Authorization 헤더에서 토큰 추출 (선택적)
+  // 환경변수 또는 Authorization 헤더에서 토큰 추출
   const authHeader = req.headers.get("authorization");
-  const token = authHeader?.replace("Bearer ", "");
+  const userToken = authHeader?.replace("Bearer ", "");
+  // 환경변수의 GITHUB_TOKEN을 기본으로 사용 (private repo 접근용)
+  const token = getGitHubToken() || userToken;
 
   // branch 쿼리 파라미터
   const branch = url.searchParams.get("branch") || "main";
