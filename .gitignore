@@ -44,3 +44,13 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Node.js
+node_modules/
+.next/
+.env.local
+.env*.local
+
+# Supabase
+.supabase/
+pithub/supabase/.temp/

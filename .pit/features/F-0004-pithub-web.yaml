@@ -4,15 +4,15 @@ title: pithub 웹 서비스
 description: >
   github.com/user/repo를 pithub.io/user/repo로 바꾸면
   해당 repo의 .pit/ 내용을 기획자 친화적으로 보여주는 웹 서비스
-status: planned
+status: in_progress
 priority: high
 created_at: 2025-12-12T21:15:00+09:00
-updated_at: 2025-12-12T21:15:00+09:00
+updated_at: 2025-12-12T21:30:00+09:00
 
 context: >
   개발자는 GitHub에서 코드를 보고, 기획자는 pithub에서 기획을 본다.
   .pit/ 폴더의 Features, Decisions, Logs를 웹으로 시각화.
-  GitHub Pages처럼 정적 사이트 생성 또는 동적 렌더링.
+  FastAPI 백엔드 + Next.js 프론트엔드 구조.
 
 requirements:
   - github.com → pithub.io URL 변환
@@ -30,38 +30,44 @@ acceptance_criteria:
 
 checklist:
   - id: T1
-    label: 기술 스택 결정 (Next.js? Astro? GitHub Pages?)
+    label: 기술 스택 결정 → FastAPI + Next.js
     type: design
-    done: false
+    done: true
   - id: T2
+    label: pithub/api FastAPI 백엔드 기본 구조
+    type: code
+    done: true
+  - id: T3
     label: GitHub API 연동 (.pit/ 폴더 읽기)
     type: code
-    done: false
-  - id: T3
-    label: Feature 목록 페이지 구현
-    type: code
-    done: false
+    done: true
   - id: T4
-    label: Feature 상세 페이지 구현
+    label: pithub/web Next.js 프론트엔드 기본 구조
     type: code
-    done: false
+    done: true
   - id: T5
+    label: Feature 목록/상세 페이지 구현
+    type: code
+    done: true
+  - id: T6
     label: Decision 페이지 구현
     type: code
-    done: false
-  - id: T6
+    done: true
+  - id: T7
     label: 프로젝트 대시보드 구현
     type: code
-    done: false
-  - id: T7
+    done: true
+  - id: T8
     label: 도메인 설정 (pithub.io)
     type: infra
     done: false
-  - id: T8
+  - id: T9
     label: 배포 파이프라인 구축
     type: infra
     done: false
 
-decisions: []
+decisions:
+  - D-0003
+
 git_branch: null
 git_pr: null
