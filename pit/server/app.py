@@ -18,6 +18,7 @@ from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from pydantic import Field
 
+from pit.server.api import LocalApi
 from pit.server.identity import Caller, NotAuthenticatedError, current_caller
 from pit.server.ratelimit import RateLimiter
 from pit.server.repository import DecisionRepository, RepositoryError, SupabaseRepository
@@ -139,6 +140,12 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
     ) -> dict[str, object]:
         """Read one of this user's decisions in full."""
         return await _run(ready().get_decision(_caller(), decision_id))
+
+    if repository is not None:
+        api = LocalApi(repository)
+        server.custom_route("/api/v1/me", methods=["GET"])(api.me)
+        server.custom_route("/api/v1/decisions", methods=["POST"])(api.push)
+        server.custom_route("/api/v1/decisions", methods=["GET"])(api.pull)
 
     return server
 

@@ -48,6 +48,8 @@ class InMemoryRepository:
     def __init__(self) -> None:
         self.accounts: dict[int, str] = {}
         self.rows: list = []
+        # token_hash → (github_id, login)
+        self.tokens: dict[str, tuple[int, str]] = {}
         self.fail_with: Exception | None = None
 
     def _maybe_fail(self) -> None:
@@ -86,3 +88,22 @@ class InMemoryRepository:
         return next(
             (row for row in self.rows if row.owner_github_id == owner_github_id and row.id == decision_id), None
         )
+
+    async def find_token_owner(self, token_hash: str):  # noqa: ANN201
+        self._maybe_fail()
+        from pit.server.identity import Caller
+
+        found = self.tokens.get(token_hash)
+        return Caller(github_id=found[0], github_login=found[1]) if found else None
+
+    async def upsert_local(self, decisions: list) -> int:
+        self._maybe_fail()
+        for decision in decisions:
+            self.rows = [row for row in self.rows if row.id != decision.id]
+            self.rows.append(decision)
+        return len(decisions)
+
+    async def list_mine(self, owner_github_id: int, since, limit: int) -> list:  # noqa: ANN001
+        self._maybe_fail()
+        rows = [r for r in self.rows if r.owner_github_id == owner_github_id and (since is None or r.decided_at >= since)]
+        return sorted(rows, key=lambda r: r.decided_at)[:limit]

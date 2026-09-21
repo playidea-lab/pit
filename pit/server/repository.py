@@ -6,10 +6,12 @@
 
 import logging
 import re
+from datetime import datetime
 from typing import Protocol
 
 import httpx
 
+from pit.server.identity import Caller
 from pit.server.records import StoredDecision
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,14 @@ class DecisionRepository(Protocol):
     async def search_confirmed(self, owner_github_id: int, query: str, limit: int) -> list[StoredDecision]: ...
 
     async def get(self, owner_github_id: int, decision_id: str) -> StoredDecision | None: ...
+
+    # --- 로컬 pit 용 (TokenRepository) ---
+
+    async def find_token_owner(self, token_hash: str) -> Caller | None: ...
+
+    async def upsert_local(self, decisions: list[StoredDecision]) -> int: ...
+
+    async def list_mine(self, owner_github_id: int, since: datetime | None, limit: int) -> list[StoredDecision]: ...
 
 
 def sanitize_query(query: str) -> str:
@@ -96,3 +106,43 @@ class SupabaseRepository:
         params = {"owner_github_id": f"eq.{owner_github_id}", "id": f"eq.{decision_id}", "limit": "1"}
         rows = (await self._request("GET", "/decisions", params=params)).json()
         return StoredDecision.model_validate(rows[0]) if rows else None
+
+    async def find_token_owner(self, token_hash: str) -> Caller | None:
+        params = {
+            "token_hash": f"eq.{token_hash}",
+            "revoked_at": "is.null",
+            "select": "owner_github_id,accounts(github_login)",
+            "limit": "1",
+        }
+        rows = (await self._request("GET", "/api_tokens", params=params)).json()
+        if not rows:
+            return None
+        row = rows[0]
+        account = row.get("accounts") or {}
+        await self._request(
+            "PATCH",
+            "/api_tokens",
+            params={"token_hash": f"eq.{token_hash}"},
+            headers={"Prefer": "return=minimal"},
+            json={"last_used_at": datetime.now().astimezone().isoformat()},
+        )
+        return Caller(github_id=int(row["owner_github_id"]), github_login=str(account.get("github_login", "")))
+
+    async def upsert_local(self, decisions: list[StoredDecision]) -> int:
+        if not decisions:
+            return 0
+        response = await self._request(
+            "POST",
+            "/decisions",
+            params={"on_conflict": "id"},
+            headers={"Prefer": "resolution=merge-duplicates,return=representation"},
+            json=[decision.model_dump(mode="json") for decision in decisions],
+        )
+        return len(response.json())
+
+    async def list_mine(self, owner_github_id: int, since: datetime | None, limit: int) -> list[StoredDecision]:
+        params = {"owner_github_id": f"eq.{owner_github_id}", "order": "decided_at.asc", "limit": str(limit)}
+        if since is not None:
+            params["decided_at"] = f"gte.{since.isoformat()}"
+        response = await self._request("GET", "/decisions", params=params)
+        return [StoredDecision.model_validate(row) for row in response.json()]

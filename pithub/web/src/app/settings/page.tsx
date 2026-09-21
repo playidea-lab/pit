@@ -1,7 +1,8 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import Header from "@/components/Header";
-import { exportMyData, deleteMyAccount } from "@/lib/account-actions";
+import { deleteMyAccount, exportMyData, issueToken, revokeToken } from "@/lib/account-actions";
 import { getMyAccount } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 
@@ -10,7 +11,13 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   const user = await getUser();
   if (!user) redirect("/?next=/settings");
-  const account = await getMyAccount(await createServerSupabaseClient());
+  const supabase = await createServerSupabaseClient();
+  const account = await getMyAccount(supabase);
+  const { data: tokens } = await supabase
+    .from("api_tokens")
+    .select("id, name, created_at, last_used_at, revoked_at")
+    .order("created_at", { ascending: false });
+  const newToken = (await cookies()).get("pithub_new_token")?.value;
 
   return (
     <main className="min-h-screen">
@@ -34,10 +41,40 @@ export default async function SettingsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold mb-1">로컬 pit 연동</h2>
-          <p className="text-gray-400 text-sm">
-            원문 보존과 감사를 원하는 개발자용 CLI의 토큰 발급은 다음 단계에서 열립니다.
+          <h2 className="text-lg font-semibold mb-1">로컬 pit 토큰</h2>
+          <p className="text-gray-400 text-sm mb-3">
+            원문 보존과 감사를 원하는 개발자용 CLI(<code>pit login</code>)에 쓰는 토큰입니다. 발급 직후 한 번만 보입니다.
           </p>
+          {newToken && (
+            <div className="mb-4 rounded-lg border border-green-800 bg-green-950/40 p-3">
+              <p className="text-sm text-green-300 mb-1">새 토큰 — 지금 복사해 두세요. 다시 볼 수 없습니다.</p>
+              <code className="block break-all text-sm">{newToken}</code>
+              <p className="text-xs text-gray-400 mt-2">
+                <code>pit login</code> 을 실행하고 붙여 넣으면 됩니다.
+              </p>
+            </div>
+          )}
+          <form action={issueToken} className="flex gap-2 mb-4">
+            <input name="name" placeholder="이 기기 이름 (예: 맥북)" className="rounded-lg bg-gray-950 border border-gray-700 px-3 py-2 text-sm" />
+            <button className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm">토큰 발급</button>
+          </form>
+          <ul className="space-y-2 text-sm">
+            {(tokens ?? []).map((t) => (
+              <li key={t.id} className="flex items-center gap-3 text-gray-300">
+                <span className={t.revoked_at ? "line-through text-gray-600" : ""}>{t.name}</span>
+                <span className="text-gray-500 text-xs">
+                  발급 {new Date(t.created_at).toLocaleDateString("ko-KR")}
+                  {t.last_used_at && ` · 마지막 사용 ${new Date(t.last_used_at).toLocaleDateString("ko-KR")}`}
+                </span>
+                {!t.revoked_at && (
+                  <form action={revokeToken} className="ml-auto">
+                    <input type="hidden" name="id" value={t.id} />
+                    <button className="text-xs text-red-300 hover:underline">폐기</button>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
 
         <div className="border border-red-900/60 rounded-lg p-4">
