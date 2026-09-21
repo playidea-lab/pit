@@ -261,3 +261,21 @@ def test_api_tokens_are_visible_only_to_their_owner(db):
             "insert into public.api_tokens (owner_github_id, name, token_hash) values (%s, 'x', 'hash-b')",
             (ALICE_GITHUB_ID,),
         )
+
+
+def test_delete_my_account_removes_everything_of_the_caller_only(db):
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-alice")
+    record_via_mcp(db, BOB_GITHUB_ID, "bob", "PD-bob")
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.delete_my_account()")
+
+    assert ids(db, "select id from public.decisions") == ["PD-bob"]
+    assert ids(db, "select github_login from public.accounts") == ["bob"]
+    assert db.execute("select count(*) from public.profiles").fetchone()[0] == 0
+
+
+def test_delete_my_account_anonymous_is_refused(db):
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "anon"):
+        db.execute("select public.delete_my_account()")

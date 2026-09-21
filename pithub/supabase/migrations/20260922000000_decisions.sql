@@ -249,3 +249,23 @@ join public.accounts a on a.github_id = d.owner_github_id
 where d.status = 'confirmed' and d.visibility = 'public';
 
 grant select on public.public_decisions to anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 계정 삭제 — 본인 것만, 연쇄로 결정·검토 이력·토큰까지
+-- ---------------------------------------------------------------------------
+
+create function public.delete_my_account() returns void
+language plpgsql security definer set search_path = ''
+as $$
+declare
+    my_github_id bigint := public.current_github_id();
+begin
+    if my_github_id is null then
+        raise exception 'not signed in' using errcode = '28000';
+    end if;
+    delete from public.accounts where github_id = my_github_id;
+end;
+$$;
+
+revoke all on function public.delete_my_account() from public;
+grant execute on function public.delete_my_account() to authenticated;
