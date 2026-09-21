@@ -29,6 +29,9 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
 ]
+server = [
+    "fastmcp>=2.12",
+]
 
 [project.scripts]
 pit = "pit.cli.main:app"

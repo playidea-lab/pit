@@ -1,0 +1,26 @@
+# pithub MCP 서버 (Fly.io)
+# 앱 이름은 Fly 전체에서 유일해야 한다. 이미 쓰이고 있으면 `fly launch --no-deploy`가 다른 이름을 묻는다.
+app = "pithub-mcp"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PITHUB_MCP_HOST = "0.0.0.0"
+  PITHUB_MCP_PORT = "8080"
+  # PITHUB_MCP_BASE_URL 은 공개 주소(https://<app>.fly.dev)로 `fly secrets set` 또는 여기서 지정한다.
+  # GitHub OAuth 자격 증명과 JWT 서명 키는 반드시 `fly secrets set` 으로만 넣는다.
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # 연결 시험 단계에서는 OAuth 클라이언트 등록 정보가 프로세스 안에 있다.
+  # 기계가 멈추면 사용자가 다시 로그인해야 하므로 한 대를 계속 켜 둔다.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
