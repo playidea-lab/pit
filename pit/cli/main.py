@@ -2,6 +2,7 @@
 
 import typer
 
+from pit.cli.extract import extract_cmd
 from pit.cli.features import app as features_app
 from pit.cli.git import app as git_app
 from pit.cli.health import app as health_app
@@ -21,6 +22,7 @@ app.add_typer(health_app, name="health")
 app.add_typer(git_app, name="git")
 app.add_typer(vault_app, name="vault")
 app.add_typer(transcripts_app, name="transcripts")
+app.command("extract")(extract_cmd)
 
 
 # Shortcut: pit feature -> pit features show

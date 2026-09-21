@@ -29,6 +29,8 @@ class TwinConfig(BaseModel):
     restricted_cwd_globs: list[str] = Field(default_factory=list)
     # 대화 뷰에서 가릴 고객·기관 용어
     customer_terms: list[str] = Field(default_factory=list)
+    # 태스크별 모델 ID (extract, twin). 코드에는 기본값이 없다 — 실험 변수라서 명시해야 한다.
+    models: dict[str, str] = Field(default_factory=dict)
     # 통제군 입력으로 스냅샷할 파일 (~/.claude 기준 glob)
     control_input_globs: list[str] = Field(
         default_factory=lambda: ["CLAUDE.md", "rules/*.md", "projects/*/memory/*.md"]
