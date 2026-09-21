@@ -80,3 +80,41 @@ def append_records(path: Path, records: list[dict], raw_tail: bytes = b"") -> No
         f.write(b"".join(to_line(record) for record in records) + raw_tail)
     bumped = before + 1_000_000_000
     os.utime(path, ns=(bumped, bumped))
+
+
+def tool_use_record(tool_id: str, name: str, tool_input: dict, minute: int = 0, message_id: str = "msg-tool") -> dict:
+    """assistant가 도구를 호출한 레코드"""
+    record = assistant_record("", minute=minute, message_id=message_id)
+    record["uuid"] = f"a-tool-{tool_id}"
+    record["message"]["content"] = [{"type": "tool_use", "id": tool_id, "name": name, "input": tool_input}]
+    return record
+
+
+def tool_result_record(tool_id: str, minute: int = 0, **extra: object) -> dict:
+    """도구 결과를 담은 자동 user 레코드"""
+    return {
+        "type": "user",
+        "uuid": f"u-result-{tool_id}",
+        "timestamp": timestamp(minute),
+        "cwd": DEFAULT_CWD,
+        "sessionId": DEFAULT_SESSION_ID,
+        "isSidechain": False,
+        "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tool_id, "content": "ok"}]},
+        **extra,
+    }
+
+
+def queued_record(text: str, minute: int = 0, mode: str = "prompt", origin_kind: str | None = "human") -> dict:
+    """에이전트 작업 중에 큐에 들어온 메시지 (attachment 레코드)"""
+    attachment: dict = {"type": "queued_command", "commandMode": mode, "prompt": text, "timestamp": timestamp(minute)}
+    if origin_kind is not None:
+        attachment["origin"] = {"kind": origin_kind}
+    return {
+        "type": "attachment",
+        "uuid": f"att-{minute}",
+        "timestamp": timestamp(minute),
+        "cwd": DEFAULT_CWD,
+        "sessionId": DEFAULT_SESSION_ID,
+        "isSidechain": False,
+        "attachment": attachment,
+    }

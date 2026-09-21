@@ -6,6 +6,7 @@ from pit.cli.features import app as features_app
 from pit.cli.git import app as git_app
 from pit.cli.health import app as health_app
 from pit.cli.projects import app as projects_app
+from pit.cli.transcripts import app as transcripts_app
 from pit.cli.vault import app as vault_app
 
 app = typer.Typer(
@@ -19,6 +20,7 @@ app.add_typer(features_app, name="features")
 app.add_typer(health_app, name="health")
 app.add_typer(git_app, name="git")
 app.add_typer(vault_app, name="vault")
+app.add_typer(transcripts_app, name="transcripts")
 
 
 # Shortcut: pit feature -> pit features show
