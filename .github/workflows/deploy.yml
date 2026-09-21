@@ -1,0 +1,35 @@
+# main 에 병합되면 Fly.io 에 배포한다.
+# 필요한 GitHub Secrets: FLY_API_TOKEN, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_PITHUB_MCP_URL
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  mcp-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only --ha=false
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: >-
+          flyctl deploy --remote-only --ha=false
+          --build-arg NEXT_PUBLIC_SUPABASE_URL="${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}"
+          --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}"
+          --build-arg NEXT_PUBLIC_PITHUB_MCP_URL="${{ secrets.NEXT_PUBLIC_PITHUB_MCP_URL }}"
+        working-directory: pithub/web
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

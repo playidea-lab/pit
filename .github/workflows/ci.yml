@@ -1,0 +1,54 @@
+# CI — 단위 테스트 · 린트 · 접근 권한(RLS) 통합 테스트 · 웹 빌드
+name: ci
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --extra server
+      - run: uv run ruff check pit tests
+      - run: uv run pytest -q
+      - name: RLS integration tests (migration on Postgres 17 + Supabase stub)
+        env:
+          PITHUB_TEST_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
+        run: uv run pytest -q -m integration
+      - name: Wheel contains bundled prompts
+        run: uv run pytest -q -m slow
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pithub/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: pithub/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+        env:
+          # 빌드에는 값의 존재만 필요하다. 진짜 값은 배포 시 build-arg로 들어간다.
+          NEXT_PUBLIC_SUPABASE_URL: https://ci.invalid
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder

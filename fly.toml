@@ -9,6 +9,7 @@ primary_region = "nrt"
 [env]
   PITHUB_MCP_HOST = "0.0.0.0"
   PITHUB_MCP_PORT = "8080"
+  PITHUB_OAUTH_STORAGE_DIR = "/data/oauth"
   # PITHUB_MCP_BASE_URL 은 공개 주소(https://<app>.fly.dev)로 `fly secrets set` 또는 여기서 지정한다.
   # GitHub OAuth 자격 증명과 JWT 서명 키는 반드시 `fly secrets set` 으로만 넣는다.
 
@@ -24,3 +25,8 @@ primary_region = "nrt"
 [[vm]]
   size = "shared-cpu-1x"
   memory = "512mb"
+
+# OAuth 클라이언트 등록·토큰을 재배포에도 남기기 위한 볼륨 (Fernet으로 암호화되어 저장된다)
+[mounts]
+  source = "pit_oauth"
+  destination = "/data"
