@@ -1,6 +1,6 @@
 # pithub MCP 서버 (Fly.io)
 # 앱 이름은 Fly 전체에서 유일해야 한다. 이미 쓰이고 있으면 `fly launch --no-deploy`가 다른 이름을 묻는다.
-app = "pithub-mcp"
+app = "pit"
 primary_region = "nrt"
 
 [build]
