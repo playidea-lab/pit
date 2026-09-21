@@ -5,62 +5,149 @@ OAuth 2.1 · 동적 클라이언트 등록 · PKCE를 이 프로바이더가 중
 GitHub 계정으로 로그인한다. 인증 로직을 직접 구현하지 않는다.
 """
 
-from dataclasses import dataclass
+import time
+from collections.abc import Awaitable
+from datetime import datetime, timezone
+from typing import Annotated, TypeVar
 
+from cryptography.fernet import Fernet
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.providers.github import GitHubProvider
-from fastmcp.server.dependencies import get_access_token
+from key_value.aio.stores.disk import DiskStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from pydantic import Field
 
+from pit.server.identity import Caller, NotAuthenticatedError, current_caller
+from pit.server.ratelimit import RateLimiter
+from pit.server.repository import DecisionRepository, RepositoryError, SupabaseRepository
 from pit.server.settings import GITHUB_SCOPES, ServerSettings
+from pit.server.tools import DEFAULT_SEARCH_LIMIT, DecisionTools, ToolFailure
 
 SERVER_NAME = "pithub"
+ResultT = TypeVar("ResultT")
+
+# 세 클라이언트(claude.ai · Claude Code · Codex)의 모델이 읽는 글이다.
 SERVER_INSTRUCTIONS = """\
-pithub는 사용자가 LLM과 일하며 내린 결정을 기록한다.
+pithub keeps a personal record of the decisions this user makes while working with an AI assistant.
+
+Call `record_decision` once, right after the user reacts to something you proposed:
+- they accept it ("ok", "go ahead", moving on to the next step) -> verdict "approve"
+- they accept it with a change or a condition -> verdict "modify"
+- they turn it down or steer elsewhere ("no, not that", "skip it") -> verdict "reject"
+- they pick one of several options you offered -> set `options` and `chosen`
+
+Rules:
+- Rejections and corrections matter most. Record them even when the conversation moves on quickly.
+- `human_quote` must be the user's own words, copied verbatim. Never paraphrase it.
+- Describe `situation` and `proposal` neutrally. Do not soften a rejection into an approval.
+- Never put passwords, tokens, keys or customer data in any field.
+- Do not record small talk, factual Q&A, or a user message that starts a new task with nothing to react to.
+- Do not announce the recording or ask permission each time; just continue the work.
+
+Call `search_my_decisions` when a past choice of this user would inform what you are about to propose.
 """
 
-
-class NotAuthenticatedError(Exception):
-    """인증된 사용자 정보를 읽을 수 없음"""
+STORAGE_NOT_READY = "pithub 저장소가 아직 준비되지 않았습니다. 기록은 저장되지 않았습니다."
 
 
-@dataclass(frozen=True)
-class Caller:
-    """도구를 호출한 사람. GitHub의 숫자 id가 pithub 계정과 이어지는 열쇠다."""
-
-    github_id: int
-    github_login: str
-
-
-def current_caller() -> Caller:
-    """현재 요청의 인증된 사용자를 돌려준다
-
-    Raises:
-        NotAuthenticatedError: 토큰이 없거나 GitHub 신원이 담겨 있지 않을 때
-    """
-    token = get_access_token()
-    if token is None:
-        raise NotAuthenticatedError("인증이 필요합니다.")
-    github_id = token.claims.get("sub")
-    login = token.claims.get("login")
-    if github_id is None or not login:
-        raise NotAuthenticatedError("토큰에 GitHub 신원이 없습니다.")
-    return Caller(github_id=int(github_id), github_login=str(login))
+def _caller() -> Caller:
+    try:
+        return current_caller()
+    except NotAuthenticatedError as e:
+        raise ToolError(str(e)) from e
 
 
-def build_server(settings: ServerSettings) -> FastMCP:
-    auth = GitHubProvider(
+def _build_auth(settings: ServerSettings) -> GitHubProvider:
+    client_storage = None
+    if settings.oauth_storage_dir and settings.oauth_storage_key:
+        # 재배포해도 세 클라이언트가 다시 로그인하지 않도록 디스크(Fly 볼륨)에 둔다.
+        # 담기는 것이 GitHub 토큰이라 반드시 암호화한다.
+        client_storage = FernetEncryptionWrapper(
+            key_value=DiskStore(directory=str(settings.oauth_storage_dir)),
+            fernet=Fernet(settings.oauth_storage_key.encode()),
+        )
+    return GitHubProvider(
         client_id=settings.github_client_id,
         client_secret=settings.github_client_secret,
         base_url=settings.base_url,
         required_scopes=list(GITHUB_SCOPES),
         jwt_signing_key=settings.jwt_signing_key,
+        client_storage=client_storage,
     )
-    server = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS, auth=auth)
+
+
+def _build_repository(settings: ServerSettings) -> DecisionRepository | None:
+    if not (settings.supabase_url and settings.supabase_service_key):
+        return None
+    return SupabaseRepository(settings.supabase_url, settings.supabase_service_key)
+
+
+def build_server(settings: ServerSettings, repository: DecisionRepository | None = None) -> FastMCP:
+    """서버를 조립한다. repository를 주면 그것을 쓰고(테스트), 없으면 설정에서 만든다."""
+    repository = repository or _build_repository(settings)
+    tools = (
+        DecisionTools(repository, RateLimiter(time.monotonic), lambda: datetime.now(timezone.utc))
+        if repository is not None
+        else None
+    )
+    server = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS, auth=_build_auth(settings))
+
+    def ready() -> DecisionTools:
+        if tools is None:
+            raise ToolError(STORAGE_NOT_READY)
+        return tools
 
     @server.tool
     def whoami() -> dict[str, str | int]:
-        """지금 연결된 pithub 계정을 확인한다 (연결 시험용)."""
-        caller = current_caller()
+        """Show which pithub account this connection is signed in as."""
+        caller = _caller()
         return {"github_id": caller.github_id, "github_login": caller.github_login}
 
+    @server.tool
+    async def record_decision(
+        situation: Annotated[str, Field(description="What was being worked on, in 1-2 neutral sentences.")],
+        proposal: Annotated[str, Field(description="What you (the assistant) proposed, in 1-2 neutral sentences.")],
+        human_quote: Annotated[str, Field(description="The user's reaction, copied verbatim from their message.")],
+        verdict: Annotated[str | None, Field(description="approve | modify | reject")] = None,
+        reject_kind: Annotated[str | None, Field(description="Only for reject: stop | redirect")] = None,
+        rationale: Annotated[str, Field(description="The user's stated reason, if they gave one. Do not guess.")] = "",
+        options: Annotated[list[str] | None, Field(description="Options you offered, if the user chose among them.")] = None,
+        chosen: Annotated[str | None, Field(description="The option the user picked.")] = None,
+        project: Annotated[str | None, Field(description="Project or topic name, if obvious.")] = None,
+        client: Annotated[str | None, Field(description="Which app this is: claude.ai, claude-code, codex, ...")] = None,
+    ) -> dict[str, object]:
+        """Record one decision: the user's verdict on something you proposed. Call right after they react."""
+        arguments = {
+            "situation": situation, "proposal": proposal, "human_quote": human_quote, "verdict": verdict,
+            "reject_kind": reject_kind, "rationale": rationale, "options": options or [], "chosen": chosen,
+            "project": project, "client": client,
+        }  # fmt: skip
+        return await _run(ready().record_decision(_caller(), arguments))
+
+    @server.tool
+    async def search_my_decisions(
+        query: Annotated[str, Field(description="Words to look for in this user's confirmed past decisions.")],
+        limit: Annotated[int, Field(description="Maximum results.")] = DEFAULT_SEARCH_LIMIT,
+    ) -> list[dict[str, object]]:
+        """Find how this user decided similar things before. Only their own confirmed decisions are searched."""
+        return await _run(ready().search_my_decisions(_caller(), query, limit))
+
+    @server.tool
+    async def get_decision(
+        decision_id: Annotated[str, Field(description="An id returned by search_my_decisions or record_decision.")],
+    ) -> dict[str, object]:
+        """Read one of this user's decisions in full."""
+        return await _run(ready().get_decision(_caller(), decision_id))
+
     return server
+
+
+async def _run(operation: Awaitable[ResultT]) -> ResultT:
+    """도구의 실패를 MCP 클라이언트가 이해하는 오류로 옮긴다"""
+    try:
+        return await operation
+    except ToolFailure as e:
+        raise ToolError(str(e)) from e
+    except RepositoryError as e:
+        raise ToolError("pithub 저장소에 닿지 못했습니다. 기록은 저장되지 않았습니다.") from e

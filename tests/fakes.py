@@ -40,3 +40,49 @@ class FakeClock:
     def __call__(self) -> float:
         self._now += self._step
         return self._now
+
+
+class InMemoryRepository:
+    """DecisionRepository 규약의 메모리 구현 (여러 사용자의 행을 한곳에 담는다)"""
+
+    def __init__(self) -> None:
+        self.accounts: dict[int, str] = {}
+        self.rows: list = []
+        self.fail_with: Exception | None = None
+
+    def _maybe_fail(self) -> None:
+        if self.fail_with is not None:
+            raise self.fail_with
+
+    async def ensure_account(self, github_id: int, github_login: str) -> None:
+        self._maybe_fail()
+        self.accounts[github_id] = github_login
+
+    async def insert_draft(self, decision) -> bool:  # noqa: ANN001
+        self._maybe_fail()
+        duplicate = any(
+            row.owner_github_id == decision.owner_github_id and row.dedupe_key == decision.dedupe_key
+            for row in self.rows
+        )
+        if duplicate:
+            return False
+        self.rows.append(decision)
+        return True
+
+    async def search_confirmed(self, owner_github_id: int, query: str, limit: int) -> list:
+        self._maybe_fail()
+        needle = query.lower()
+        found = [
+            row
+            for row in self.rows
+            if row.owner_github_id == owner_github_id
+            and row.status == "confirmed"
+            and needle in f"{row.situation} {row.proposal} {row.rationale} {row.human_quote}".lower()
+        ]
+        return found[:limit]
+
+    async def get(self, owner_github_id: int, decision_id: str):  # noqa: ANN201
+        self._maybe_fail()
+        return next(
+            (row for row in self.rows if row.owner_github_id == owner_github_id and row.id == decision_id), None
+        )

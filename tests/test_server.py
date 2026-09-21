@@ -8,6 +8,7 @@ import pytest
 pytest.importorskip("fastmcp", reason="서버 extra가 설치된 환경에서만 실행")
 
 from pit.server import app as server_app  # noqa: E402
+from pit.server import identity  # noqa: E402
 from pit.server.settings import GITHUB_SCOPES, SettingsError, load_settings  # noqa: E402
 
 ENV = {
@@ -52,24 +53,24 @@ def test_github_scopes_request_identity_only():
 
 
 def test_current_caller_without_token_raises_not_authenticated(monkeypatch):
-    monkeypatch.setattr(server_app, "get_access_token", lambda: None)
+    monkeypatch.setattr(identity, "get_access_token", lambda: None)
 
-    with pytest.raises(server_app.NotAuthenticatedError):
-        server_app.current_caller()
+    with pytest.raises(identity.NotAuthenticatedError):
+        identity.current_caller()
 
 
 def test_current_caller_token_without_github_identity_raises(monkeypatch):
-    monkeypatch.setattr(server_app, "get_access_token", lambda: SimpleNamespace(claims={"login": "cm"}))
+    monkeypatch.setattr(identity, "get_access_token", lambda: SimpleNamespace(claims={"login": "cm"}))
 
-    with pytest.raises(server_app.NotAuthenticatedError):
-        server_app.current_caller()
+    with pytest.raises(identity.NotAuthenticatedError):
+        identity.current_caller()
 
 
 def test_current_caller_reads_numeric_github_id_and_login(monkeypatch):
     token = SimpleNamespace(claims={"sub": "12345", "login": "cm"})
-    monkeypatch.setattr(server_app, "get_access_token", lambda: token)
+    monkeypatch.setattr(identity, "get_access_token", lambda: token)
 
-    assert server_app.current_caller() == server_app.Caller(github_id=12345, github_login="cm")
+    assert identity.current_caller() == identity.Caller(github_id=12345, github_login="cm")
 
 
 def test_build_server_exposes_whoami_tool(monkeypatch):
@@ -78,4 +79,4 @@ def test_build_server_exposes_whoami_tool(monkeypatch):
     server = server_app.build_server(load_settings())
     tools = asyncio.run(server.get_tools())
 
-    assert "whoami" in tools
+    assert set(tools) == {"whoami", "record_decision", "search_my_decisions", "get_decision"}
