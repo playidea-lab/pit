@@ -18,7 +18,7 @@ from pit.personal.config import TwinConfig
 from pit.personal.home import ensure_home
 from pit.vault.manifest import ManifestEntry, load_manifest, write_manifest
 from pit.vault.policy import CollectionPolicy, filter_paused, is_collectable, load_pauses
-from pit.vault.sources import SOURCE_TOOL, SessionFile, discover_sessions, peek_session_meta
+from pit.vault.sources import SessionFile, SourceAdapter, get_source
 
 logger = logging.getLogger(__name__)
 
@@ -59,21 +59,27 @@ class SyncReport:
         return sum(result.bytes_added for result in self.results)
 
 
-def vault_relpath(device: str, src: SessionFile) -> Path:
-    base = Path("vault") / SOURCE_TOOL / device
+def vault_relpath(tool: str, device: str, src: SessionFile) -> Path:
+    base = Path("vault") / tool / device
     if src.agent_name is None:
         return base / f"{src.session_id}.jsonl"
     return base / src.session_id / "subagents" / f"{src.agent_name}.jsonl"
 
 
 def sync_all(
-    home: Path, source_root: Path, config: TwinConfig, device: str, now: datetime
+    home: Path,
+    source_root: Path,
+    config: TwinConfig,
+    device: str,
+    now: datetime,
+    source: SourceAdapter | None = None,
 ) -> SyncReport:
     """루트 아래 모든 세션을 보관함에 반영한다
 
     파일 하나가 실패해도 나머지는 계속한다. manifest는 중간에 죽어도 그때까지의
     결과가 남도록 마지막에 반드시 쓴다.
     """
+    source = source or get_source()
     ensure_home(home)
     entries = load_manifest(home)
     policy = CollectionPolicy(
@@ -82,10 +88,10 @@ def sync_all(
     report = SyncReport()
 
     try:
-        for src in discover_sessions(source_root):
+        for src in source.discover(source_root):
             manifest_key = f"{device}/{src.key}"
             try:
-                result = sync_session(src, home, entries.get(manifest_key), policy, device, now)
+                result = sync_session(src, home, entries.get(manifest_key), policy, device, now, source)
             except OSError as e:
                 logger.warning(
                     "세션 파일을 읽지 못해 건너뜀",
@@ -108,15 +114,18 @@ def sync_session(
     policy: CollectionPolicy,
     device: str,
     now: datetime,
+    source: SourceAdapter | None = None,
 ) -> SyncResult:
     """세션 파일 하나를 보관함에 반영한다"""
+    source = source or get_source()
+    relpath = vault_relpath(source.tool, device, src)
     stat = src.path.stat()
-    target = home / vault_relpath(device, src)
+    target = home / relpath
     unchanged = entry is not None and entry.source_mtime_ns == stat.st_mtime_ns
     if unchanged and target.exists():
         return SyncResult(key=src.key, status=SyncStatus.UNCHANGED, entry=entry)
 
-    meta = peek_session_meta(src.path)
+    meta = source.peek_meta(src.path)
     cwd = meta.cwd or (entry.cwd if entry else None)
     if cwd is None:
         return SyncResult(key=src.key, status=SyncStatus.SKIPPED_UNKNOWN_CWD)
@@ -134,7 +143,7 @@ def sync_session(
 
     new_entry = ManifestEntry(
         key=src.key,
-        tool=SOURCE_TOOL,
+        tool=source.tool,
         device=device,
         session_id=src.session_id,
         agent_name=src.agent_name,
@@ -144,7 +153,7 @@ def sync_session(
         source_bytes=end,
         source_prefix_sha256=hasher.hexdigest(),
         source_mtime_ns=stat.st_mtime_ns,
-        vault_relpath=str(vault_relpath(device, src)),
+        vault_relpath=str(relpath),
         vault_bytes=target.stat().st_size,
         vault_sha256=_sha256_file(target),
         generation=generation,

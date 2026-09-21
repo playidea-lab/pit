@@ -14,7 +14,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from pit.personal.config import TwinConfig
-from pit.transcripts.events import build_events
+from pit.transcripts.events import EVENT_BUILDERS
 from pit.transcripts.reader import ReadStats
 from pit.transcripts.records import Event
 from pit.transcripts.redact import RedactionRules, redact
@@ -37,6 +37,8 @@ class ViewMeta(BaseModel):
     events: int
     # 고객 데이터가 섞이는 프로젝트라 뷰를 만들지 않았다
     restricted: bool = False
+    # 이 도구의 파서가 아직 없다 (보관은 되어 있다)
+    unsupported: bool = False
     redactions: dict[str, int] = Field(default_factory=dict)
     malformed_lines: int = 0
     duplicate_uuids: int = 0
@@ -63,7 +65,10 @@ def refresh_view(home: Path, entry: ManifestEntry, config: TwinConfig) -> ViewMe
     events_path.parent.mkdir(parents=True, exist_ok=True)
     restricted = is_restricted(entry.cwd, config)
     stats = ReadStats()
-    events = [] if restricted else build_events(home / entry.vault_relpath, stats)
+    builder = EVENT_BUILDERS.get(entry.tool)
+    if builder is None:
+        logger.warning("파서가 없는 도구라 뷰를 만들지 않음", extra={"tool": entry.tool})
+    events = [] if restricted or builder is None else builder(home / entry.vault_relpath, stats)
 
     rules = RedactionRules(customer_terms=tuple(config.customer_terms))
     redactions: dict[str, int] = {}
@@ -82,6 +87,7 @@ def refresh_view(home: Path, entry: ManifestEntry, config: TwinConfig) -> ViewMe
         cwd=entry.cwd,
         events=len(events),
         restricted=restricted,
+        unsupported=builder is None,
         redactions=redactions,
         malformed_lines=stats.malformed,
         duplicate_uuids=stats.duplicate_uuid,

@@ -14,6 +14,7 @@ import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -93,3 +94,52 @@ def peek_session_meta(path: Path) -> SessionMeta:
 
     logger.debug("cwd를 찾지 못함", extra={"path": str(path)})
     return SessionMeta(cwd=None, version=None)
+
+
+class UnknownSourceError(Exception):
+    """등록되지 않은 도구 이름"""
+
+
+class SourceAdapter(Protocol):
+    """LLM 도구 하나의 세션 기록을 찾는 방법
+
+    새 도구(Codex, claude.ai 내보내기 등)를 지원하려면 이 규약을 구현해 SOURCES에
+    등록하고, 같은 이름으로 pit.transcripts.events.EVENT_BUILDERS 에 파서를 등록한다.
+    보관·정책·캐시·추출·검토는 도구와 무관하게 그대로 동작한다.
+    """
+
+    tool: str
+
+    def default_root(self) -> Path: ...
+
+    def discover(self, root: Path) -> Iterator[SessionFile]: ...
+
+    def peek_meta(self, path: Path) -> SessionMeta: ...
+
+
+class ClaudeCodeSource:
+    tool = SOURCE_TOOL
+
+    def default_root(self) -> Path:
+        return resolve_source_root()
+
+    def discover(self, root: Path) -> Iterator[SessionFile]:
+        return discover_sessions(root)
+
+    def peek_meta(self, path: Path) -> SessionMeta:
+        return peek_session_meta(path)
+
+
+SOURCES: dict[str, SourceAdapter] = {SOURCE_TOOL: ClaudeCodeSource()}
+
+
+def get_source(tool: str = SOURCE_TOOL) -> SourceAdapter:
+    """도구 이름으로 어댑터를 찾는다
+
+    Raises:
+        UnknownSourceError: 등록되지 않은 도구일 때
+    """
+    try:
+        return SOURCES[tool]
+    except KeyError:
+        raise UnknownSourceError(f"지원하지 않는 도구입니다: {tool} (지원: {', '.join(sorted(SOURCES))})") from None

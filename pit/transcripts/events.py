@@ -5,7 +5,7 @@
 timestamp도 없어서, 빼는 목록으로는 안전을 보장할 수 없다.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import timedelta
 from pathlib import Path
 
@@ -136,6 +136,13 @@ def build_events(path: Path, stats: ReadStats | None = None) -> list[Event]:
     for record in iter_records(path, stats):
         builder.feed(record)
     return builder.events
+
+
+# 도구 이름(manifest의 tool) → 그 도구의 세션 파일을 이벤트로 바꾸는 함수.
+# 이벤트 모델 이후의 단계는 도구를 모른다.
+EVENT_BUILDERS: dict[str, Callable[[Path, ReadStats | None], list[Event]]] = {
+    "claude-code": build_events,
+}
 
 
 def split_segments(events: Iterable[Event], idle_gap: timedelta) -> list[list[Event]]:
