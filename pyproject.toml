@@ -18,17 +18,10 @@ dependencies = [
     "anthropic>=0.75.0",
     "python-dotenv>=1.2.1",
     "mcp>=1.23.3",
-    "fastapi>=0.124.2",
     "httpx>=0.28.1",
-    "uvicorn>=0.38.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "ruff>=0.1.0",
-]
 server = [
     "fastmcp>=2.12",
 ]
@@ -43,6 +36,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pit"]
+# 추출·트윈 프롬프트는 코드가 아니라 데이터다. 빠지면 실행 시점에야 터지므로 명시한다.
+artifacts = ["pit/twin/prompts/*.md"]
 
 [tool.ruff]
 line-length = 100
@@ -55,6 +50,10 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "slow: wheel 빌드처럼 오래 걸리는 테스트",
+    "integration: 로컬 Supabase 등 외부 서비스가 필요한 테스트",
+]
 
 [dependency-groups]
 dev = [

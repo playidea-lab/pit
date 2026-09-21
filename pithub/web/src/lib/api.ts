@@ -44,6 +44,24 @@ export interface DecisionDetail extends Decision {
   created_at?: string;
 }
 
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  body: string | null;
+  state: "open" | "closed";
+  created_at: string;
+  updated_at: string;
+  user: {
+    login: string;
+    avatar_url: string;
+  };
+  labels: Array<{
+    name: string;
+    color: string;
+  }>;
+  comments: number;
+}
+
 export interface ProjectConfig {
   id: string;
   name: string;
@@ -75,19 +93,29 @@ async function fetchAPI<T>(
       ...(options.headers as Record<string, string>),
     };
 
-    // Supabase Edge Functions 사용 시 anon key 추가
+    // Supabase Edge Functions 사용 시 Authorization 헤더 추가
     if (SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      headers["apikey"] = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      headers["Authorization"] = `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`;
     }
 
-    const res = await fetch(`${API_BASE}${path}`, {
+    const url = `${API_BASE}${path}`;
+    console.log("[API] Fetching:", url);
+
+    const res = await fetch(url, {
       ...options,
       headers,
     });
 
-    if (!res.ok) return null;
+    console.log("[API] Response status:", res.status);
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error("[API] Error:", errorText);
+      return null;
+    }
     return res.json();
-  } catch {
+  } catch (error) {
+    console.error("[API] Fetch error:", error);
     return null;
   }
 }
@@ -171,6 +199,44 @@ export async function getDecision(
 
   const data = await fetchAPI<{ decision: DecisionDetail }>(path);
   return data?.decision || null;
+}
+
+/**
+ * README.md 조회
+ */
+export async function getReadMe(
+  owner: string,
+  repo: string
+): Promise<string | null> {
+  const path = `/readme/${owner}/${repo}`;
+  const data = await fetchAPI<{ readme: string }>(path);
+  return data?.readme || null;
+}
+
+/**
+ * Issues 목록 조회
+ */
+export async function getIssues(
+  owner: string,
+  repo: string,
+  state: "open" | "closed" | "all" = "open"
+): Promise<GitHubIssue[]> {
+  const path = `/issues/${owner}/${repo}?state=${state}`;
+  const data = await fetchAPI<{ issues: GitHubIssue[] }>(path);
+  return data?.issues || [];
+}
+
+/**
+ * Issue 상세 조회
+ */
+export async function getIssue(
+  owner: string,
+  repo: string,
+  issueNumber: number
+): Promise<GitHubIssue | null> {
+  const path = `/issues/${owner}/${repo}/${issueNumber}`;
+  const data = await fetchAPI<{ issue: GitHubIssue }>(path);
+  return data?.issue || null;
 }
 
 /**

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getDecision } from "@/lib/api";
+import Markdown from "@/components/Markdown";
 
 interface PageProps {
   params: Promise<{
@@ -61,10 +62,8 @@ export default async function DecisionPage({ params }: PageProps) {
         </div>
 
         {/* Content */}
-        <article className="bg-gray-800 rounded-lg p-6 prose prose-invert max-w-none">
-          <div className="whitespace-pre-wrap text-gray-300">
-            {decision.content}
-          </div>
+        <article className="bg-gray-800 rounded-lg p-6">
+          <Markdown content={decision.content} />
         </article>
 
         {/* Metadata */}

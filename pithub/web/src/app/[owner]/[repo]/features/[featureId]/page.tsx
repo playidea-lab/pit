@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getFeature } from "@/lib/api";
+import Markdown from "@/components/Markdown";
 
 interface PageProps {
   params: Promise<{
@@ -60,7 +61,9 @@ export default async function FeaturePage({ params }: PageProps) {
           </div>
           <h1 className="text-3xl font-bold mb-4">{feature.title}</h1>
           {feature.description && (
-            <p className="text-gray-300">{feature.description}</p>
+            <div className="text-gray-300">
+              <Markdown content={feature.description} />
+            </div>
           )}
         </div>
 
@@ -86,8 +89,8 @@ export default async function FeaturePage({ params }: PageProps) {
         {feature.context && (
           <section className="mb-8">
             <h2 className="text-xl font-bold mb-3">Context</h2>
-            <div className="bg-gray-800 rounded-lg p-4 text-gray-300">
-              {feature.context}
+            <div className="bg-gray-800 rounded-lg p-4">
+              <Markdown content={feature.context} />
             </div>
           </section>
         )}

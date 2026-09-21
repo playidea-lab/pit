@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+from importlib import resources
 from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
@@ -15,7 +16,7 @@ from pit.transcripts.view import ConversationView, render_event
 logger = logging.getLogger(__name__)
 
 EXTRACT_PROMPT_NAME = "extract-decisions.md"
-PACKAGE_PROMPTS_DIR = Path(__file__).resolve().parent.parent / "twin" / "prompts"
+PROMPTS_PACKAGE = "pit.twin.prompts"
 EXTRACT_TOOL_NAME = "record_decisions"
 EXTRACT_MAX_TOKENS = 4096
 PROMPT_HASH_CHARS = 12
@@ -56,7 +57,12 @@ class _ExtractionPayload(BaseModel):
 def load_extract_prompt(home: Path) -> tuple[str, str]:
     """추출 프롬프트와 그 지문을 돌려준다 ($PIT_HOME/prompts/ 가 패키지 기본값을 덮어쓴다)"""
     override = home / "prompts" / EXTRACT_PROMPT_NAME
-    prompt = load_prompt(override if override.exists() else PACKAGE_PROMPTS_DIR / EXTRACT_PROMPT_NAME)
+    if override.exists():
+        prompt = load_prompt(override)
+    else:
+        # 설치된 패키지 안의 데이터로 읽는다 (소스 트리의 경로에 기대지 않는다)
+        with resources.as_file(resources.files(PROMPTS_PACKAGE) / EXTRACT_PROMPT_NAME) as bundled:
+            prompt = load_prompt(bundled)
     if prompt is None:
         raise FileNotFoundError(f"추출 프롬프트를 읽을 수 없습니다: {EXTRACT_PROMPT_NAME}")
     digest = hashlib.sha256(prompt.content.encode()).hexdigest()[:PROMPT_HASH_CHARS]
