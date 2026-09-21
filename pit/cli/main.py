@@ -2,11 +2,13 @@
 
 import typer
 
+from pit.cli.decisions import app as decisions_app
 from pit.cli.extract import extract_cmd
 from pit.cli.features import app as features_app
 from pit.cli.git import app as git_app
 from pit.cli.health import app as health_app
 from pit.cli.projects import app as projects_app
+from pit.cli.review import app as review_app
 from pit.cli.transcripts import app as transcripts_app
 from pit.cli.vault import app as vault_app
 
@@ -23,6 +25,8 @@ app.add_typer(git_app, name="git")
 app.add_typer(vault_app, name="vault")
 app.add_typer(transcripts_app, name="transcripts")
 app.command("extract")(extract_cmd)
+app.add_typer(review_app, name="review")
+app.add_typer(decisions_app, name="decisions")
 
 
 # Shortcut: pit feature -> pit features show
