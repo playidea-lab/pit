@@ -38,7 +38,10 @@ class DecisionTools:
         if not self.limiter.allow(caller.github_id):
             raise ToolFailure("기록 요청이 너무 잦습니다. 잠시 뒤에 다시 시도하세요.")
 
-        decision = to_stored(payload, caller.github_id, self.now())
+        try:
+            decision = to_stored(payload, caller.github_id, self.now())
+        except ValueError as e:
+            raise ToolFailure(f"입력이 올바르지 않습니다 — {e}") from e
         await self.repository.ensure_account(caller.github_id, caller.github_login)
         # 프로젝트별 기본 범위 (없으면 private). 초안에 붙는 것은 의도일 뿐, 노출은 확정 뒤다.
         if payload.project:

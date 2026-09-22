@@ -117,12 +117,13 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         chosen: Annotated[str | None, Field(description="The option the user picked.")] = None,
         project: Annotated[str | None, Field(description="Project or topic name, if obvious.")] = None,
         client: Annotated[str | None, Field(description="Which app this is: claude.ai, claude-code, codex, ...")] = None,
+        decided_at: Annotated[str | None, Field(description="ISO 8601 time, ONLY when backfilling a past decision from notes or documents. Omit for decisions made now.")] = None,
     ) -> dict[str, object]:
         """Record one decision: the user's verdict on something you proposed. Call right after they react."""
         arguments = {
             "situation": situation, "proposal": proposal, "human_quote": human_quote, "verdict": verdict,
             "reject_kind": reject_kind, "rationale": rationale, "options": options or [], "chosen": chosen,
-            "project": project, "client": client,
+            "project": project, "client": client, "decided_at": decided_at,
         }  # fmt: skip
         return await _run(ready().record_decision(_caller(), arguments))
 

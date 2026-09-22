@@ -82,6 +82,26 @@ def test_record_decision_project_default_sets_scope_else_private():
     assert all(row.status == "draft" for row in repository.rows)
 
 
+def test_record_decision_backfill_keeps_given_past_time_and_id_follows_it():
+    repository = InMemoryRepository()
+
+    _run(_tools(repository).record_decision(ALICE, _arguments(decided_at="2026-08-25T10:00:00+09:00", client="claude-memory")))
+
+    (row,) = repository.rows
+    assert row.decided_at.isoformat() == "2026-08-25T10:00:00+09:00"
+    assert row.id.startswith("PD-20260825-") and row.source["client"] == "claude-memory"
+
+
+@pytest.mark.parametrize("when", ["2027-01-01T00:00:00+00:00", "2020-01-01T00:00:00+00:00"])
+def test_record_decision_decided_at_out_of_range_is_rejected(when: str):
+    repository = InMemoryRepository()
+
+    with pytest.raises(ToolFailure, match="decided_at"):
+        _run(_tools(repository).record_decision(ALICE, _arguments(decided_at=when)))
+
+    assert repository.rows == []
+
+
 def test_record_decision_secret_in_quote_is_masked_before_storage():
     repository = InMemoryRepository()
     fake_key = "sk-ant-" + "a1B2" * 6

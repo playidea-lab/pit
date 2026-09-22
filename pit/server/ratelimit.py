@@ -7,7 +7,8 @@
 from collections import deque
 from collections.abc import Callable
 
-RATE_LIMIT_MAX_CALLS = 60
+# 폭주 방지용이지 백필을 막는 값이 아니다. 메모 백필 한 세션이 100건을 넘길 수 있다.
+RATE_LIMIT_MAX_CALLS = 300
 RATE_LIMIT_WINDOW_SECONDS = 3600.0
 
 

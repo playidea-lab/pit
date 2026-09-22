@@ -6,7 +6,7 @@
 
 import hashlib
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -18,6 +18,12 @@ MAX_TEXT_CHARS = 4000
 MAX_OPTIONS = 12
 DEDUPE_KEY_CHARS = 32
 ORIGIN_MCP = "mcp"
+# 백필로 넣을 수 있는 과거 시각의 하한. 이보다 오래된 것은 시간 분할 평가에서 의미가 없다.
+MAX_BACKDATE = timedelta(days=3 * 365)
+# 클라이언트 시계 오차 허용치
+MAX_FUTURE_SKEW = timedelta(minutes=10)
+# 메모·문서에서 옮긴 기록임을 나타내는 client 값 — 인용문이 실제 발화가 아니므로 감사에서 제외한다
+BACKFILL_CLIENTS = frozenset({"claude-memory", "backfill"})
 
 
 class RecordDecisionInput(BaseModel):
@@ -33,6 +39,8 @@ class RecordDecisionInput(BaseModel):
     chosen: str | None = Field(default=None, max_length=MAX_TEXT_CHARS)
     project: str | None = Field(default=None, max_length=200)
     client: str | None = Field(default=None, max_length=80)
+    # 과거 결정을 옮길 때만 준다 (메모·문서 백필). 없으면 서버 시각.
+    decided_at: datetime | None = None
 
     @model_validator(mode="after")
     def _verdict_or_choice(self) -> "RecordDecisionInput":
@@ -84,6 +92,19 @@ def make_dedupe_key(proposal: str, human_quote: str, decided_at: datetime) -> st
     return hashlib.sha256(basis.encode()).hexdigest()[:DEDUPE_KEY_CHARS]
 
 
+def _resolve_decided_at(requested: datetime | None, now: datetime) -> datetime:
+    """클라이언트가 준 시각을 받되, 미래와 너무 먼 과거는 거부한다"""
+    if requested is None:
+        return now
+    if requested.tzinfo is None:
+        requested = requested.replace(tzinfo=timezone.utc)
+    if requested > now + MAX_FUTURE_SKEW:
+        raise ValueError("decided_at 이 미래입니다.")
+    if requested < now - MAX_BACKDATE:
+        raise ValueError(f"decided_at 이 {MAX_BACKDATE.days}일보다 오래됐습니다.")
+    return requested
+
+
 def to_stored(payload: RecordDecisionInput, owner_github_id: int, now: datetime) -> StoredDecision:
     """입력을 가림 처리해 저장할 모양으로 바꾼다 (중복 키는 가리기 전의 글로 만든다)"""
     counts: Counter[str] = Counter()
@@ -94,10 +115,11 @@ def to_stored(payload: RecordDecisionInput, owner_github_id: int, now: datetime)
         counts.update(result.counts)
         return result.text
 
-    dedupe_key = make_dedupe_key(payload.proposal, payload.human_quote, now)
+    decided_at = _resolve_decided_at(payload.decided_at, now)
+    dedupe_key = make_dedupe_key(payload.proposal, payload.human_quote, decided_at)
     source = {key: value for key, value in (("client", payload.client), ("project", payload.project)) if value}
     return StoredDecision(
-        id=make_decision_id(str(owner_github_id), dedupe_key, now),
+        id=make_decision_id(str(owner_github_id), dedupe_key, decided_at),
         owner_github_id=owner_github_id,
         kind=payload.kind.value,
         verdict=payload.verdict.value if payload.verdict else None,
@@ -108,7 +130,7 @@ def to_stored(payload: RecordDecisionInput, owner_github_id: int, now: datetime)
         chosen=clean(payload.chosen) if payload.chosen else None,
         rationale=clean(payload.rationale),
         human_quote=clean(payload.human_quote),
-        decided_at=now,
+        decided_at=decided_at,
         source={key: clean(value) for key, value in source.items()},
         redactions=dict(counts),
         dedupe_key=dedupe_key,

@@ -21,6 +21,7 @@ from pit.personal.remote import (
     save_pulled,
     save_remote,
 )
+from pit.server.records import BACKFILL_CLIENTS
 
 console = Console()
 audit_app = typer.Typer(help="MCP 기록을 원문 추출과 대조한다")
@@ -111,7 +112,11 @@ def audit_mcp_cmd(
 ) -> None:
     """MCP가 기록한 결정 vs 원문에서 추출해 확정한 결정 — 재현율·판정 일치율 (먼저 'pit pull')"""
     home = resolve_pit_home()
-    pulled = [row for row in load_pulled(home) if row.get("origin") == "mcp"]
+    # 메모·문서에서 옮긴 기록은 인용문이 실제 발화가 아니라 감사에서 뺀다
+    pulled = [
+        row for row in load_pulled(home)
+        if row.get("origin") == "mcp" and (row.get("source") or {}).get("client") not in BACKFILL_CLIENTS
+    ]  # fmt: skip
     if not pulled:
         console.print("[yellow]내려받은 MCP 기록이 없습니다. 'pit pull' 을 먼저 실행하세요.[/yellow]")
         raise typer.Exit(1)
