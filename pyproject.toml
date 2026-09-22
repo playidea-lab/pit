@@ -1,14 +1,14 @@
 [project]
 name = "pit"
 version = "0.1.0"
-description = "Product / Idea Tracker - 기획/아이디어/결정/체크리스트를 Git처럼 버전 관리하고, git의 실제 코드와 비교하여 정합도를 평가하는 PM용 관제 시스템"
+description = "AI가 같은 실수를 두 번 하지 않게 하는 교정 메모리 — 결정 원장, MCP 서버, CLI"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "AGPL-3.0-or-later"
 authors = [
     { name = "changmin", email = "changmin@playidea.io" }
 ]
-keywords = ["cli", "project-management", "version-control", "planning"]
+keywords = ["mcp", "decision-log", "ai-memory", "claude", "codex"]
 
 dependencies = [
     "typer>=0.9.0",

@@ -1,243 +1,104 @@
-# pit – Product / Idea Tracker
+# pit · pithub
 
-> 기획/아이디어/결정/체크리스트를 Git처럼 버전 관리하고,
-> LLM과 대화하며 기획 내용을 구조화하는 PM용 관제 시스템
+> AI가 같은 실수를 두 번 하지 않게 하는 교정 메모리.
+> **pit**은 오픈소스 — 당신 서버에서. **pithub**는 그것을 2분 만에 켜고 팀·친구와 같은 원장을 읽는 곳.
 
----
+claude.ai · Claude Code · Codex에 MCP 커넥터 하나를 붙이면, 당신이 AI의 제안을 **거부하고 고치고 방향을 정한 순간**이
+기록됩니다. 다음 세션의 AI는 제안하기 전에 그 기록을 찾아봅니다. 대화 원문은 서버로 가지 않습니다 — 결정 한 건의 요약과
+당신의 말 한 줄만 갑니다.
 
-## Quick Start
+```
+사용자 ──(제안을 거부/수정/선택)──▶ 세션의 AI ──record_decision──▶ pithub 원장 (본인만)
+다음 세션의 AI ──search_my_decisions──▶ "지난주에 같은 방식을 재보고 폐기하셨습니다"
+```
+
+## 왜
+
+- AI가 제안하고 사람이 "ㅇㅇ"으로 넘긴 결정이 코드와 문서에 쌓이는데, "왜 이렇게 했지?"에 아무도 답하지 못한다.
+- 같은 교정을 세션마다, 도구마다 반복한다. Claude의 메모리는 Codex를 모르고, Codex는 Claude를 모른다.
+- `CLAUDE.md` · `AGENTS.md`는 손으로 관리하는 결정 원장이고, 늘 낡아 있다.
+
+## 원칙
+
+1. **원문은 나가지 않는다.** 결정의 요약과 인용문만 저장한다. 수신 시점에 시크릿·개인정보를 가린다.
+2. **기본은 비공개.** 기록은 본인만 본다. 팀·친구·공개는 확인한 결정만, 결정마다 골라서.
+3. **기록에 드는 노력은 0.** 확인은 쓰는 순간(열람·공개)에만, 품질은 주간 표본으로 잰다.
+4. **지우면 정말 사라진다.** 결정 하나든 계정 전체든.
+5. **트윈은 묻는 사람이 볼 수 있는 결정만큼만 안다.** 경계는 프롬프트가 아니라 행 접근 권한(RLS)이다.
+
+## 구성
+
+| 디렉터리 | 무엇 |
+|---|---|
+| `pit/server/` | 원격 MCP 서버 (FastMCP, GitHub OAuth). 도구: `record_decision` · `search_my_decisions` · `get_decision` · `whoami`, 로컬 CLI용 토큰 API |
+| `pithub/web/` | Next.js 웹 — 정리함, 내 결정, 공개 페이지 `/u/<아이디>`, 설정 |
+| `pithub/supabase/` | Postgres 스키마와 RLS (마이그레이션) |
+| `pit/` (그 외) | 로컬 CLI `pit` — 세션 원문 보관함, 결정 추출, MCP 기록 감사, push/pull |
+| `docs/` | 설계·사업 문서. `PIT_KNOWLEDGE_DESIGN.md`(생애주기), `PIT_BUSINESS.md` |
+| `.pit/decisions/` | 이 프로젝트 자체의 결정 기록 (도그푸딩) |
+
+## 호스팅된 pithub 쓰기
+
+1. 도구에 커넥터를 추가한다 — claude.ai: 설정 → 커넥터 → 커스텀 커넥터 · Claude Code: `claude mcp add --transport http pithub <MCP URL>` · Codex: Settings → MCP servers
+2. GitHub로 로그인한다.
+3. 끝. 평소처럼 일하면 된다. 웹의 정리함에는 봐 둘 만한 것만 온다.
+
+## 직접 돌리기 (셀프호스트)
+
+필요한 것: Python 3.11+ · [uv](https://docs.astral.sh/uv/) · Postgres(Supabase 권장) · GitHub OAuth App · HTTPS 주소(claude.ai 커넥터 요건).
 
 ```bash
-# 설치
-uv sync
+git clone https://github.com/playidea-lab/pit.git && cd pit
+uv sync --extra server
 
-# 프로젝트 초기화 (git init처럼)
-cd /path/to/my-project
-uv run pit init
+# 1. DB — Supabase 프로젝트를 만들고 마이그레이션 적용
+cd pithub/supabase && supabase link --project-ref <ref> && supabase db push && cd ../..
 
-# Feature 관리
-uv run pit features list
-uv run pit features create "새 기능"
-uv run pit feature F-0001
+# 2. MCP 서버 — 환경변수로만 설정한다 (코드에 주소·비밀 없음)
+export PITHUB_GITHUB_CLIENT_ID=… PITHUB_GITHUB_CLIENT_SECRET=…   # OAuth App, 콜백 https://<서버>/auth/callback
+export PITHUB_MCP_BASE_URL=https://<서버> PITHUB_JWT_SIGNING_KEY=$(openssl rand -hex 32)
+export PITHUB_SUPABASE_URL=https://<ref>.supabase.co PITHUB_SUPABASE_SERVICE_KEY=…
+export PITHUB_OAUTH_STORAGE_DIR=/data/oauth PITHUB_OAUTH_STORAGE_KEY=<Fernet 키>   # 재배포해도 로그인 유지
+uv run python -m pit.server            # 또는 Dockerfile · fly.toml
 
-# LLM 채팅 (Claude API 필요)
-uv run pit chat
+# 3. 웹
+cd pithub/web && cp .env.example .env.local   # Supabase URL·anon 키·MCP 주소
+npm ci && npm run build && npm start
 ```
 
----
+Supabase Auth의 GitHub provider에 같은 OAuth App을 넣고, OAuth App에 Supabase 콜백 URL을 추가한다.
+서버는 Supabase 없이도 뜨지만 그때는 기록 도구가 "저장소 준비 중"을 돌려준다.
 
-## 핵심 개념
+## 로컬 CLI `pit` (선택, 개발자용)
 
-### .pit/ 폴더 기반 로컬 관리
-
-git이 `.git/` 폴더로 동작하듯이, pit도 `.pit/` 폴더로 동작합니다.
-
-```
-my-project/
-├── .git/                    # git 저장소
-├── .pit/                    # pit 저장소
-│   ├── config.yaml          # 프로젝트 설정
-│   ├── features/            # Feature 파일들
-│   │   ├── F-0001-xxx.yaml
-│   │   └── F-0002-xxx.yaml
-│   ├── decisions/           # 결정 기록
-│   │   └── D-0001-xxx.md
-│   └── logs/                # 회의/대화 로그
-│       └── 2025-12-12-session-001.md
-├── src/
-└── tests/
-```
-
-### 4가지 핵심 단위
-
-| 단위 | 설명 | 예시 |
-|------|------|------|
-| **Project** | 제품/서비스 단위 (`.pit/config.yaml`) | `pit`, `slam` |
-| **Feature** | 기획→개발→배포 작업 단위 | `F-0001` |
-| **Checklist** | Feature 내 할 일 | `T1`, `T2` |
-| **Decision/Log** | 결정 기록 / 회의 로그 | `D-0001` |
-
-### pit-flow (상태 머신)
-
-```
-planned → in_progress → ready_for_merge → merged → released
-```
-
----
-
-## CLI 명령어
-
-### 프로젝트 관리
+원문 보존과 감사를 원하는 사람만. Claude Code 세션 원문을 개인 보관함(`~/.pit`)에 지워지지 않게 복사하고,
+원문에서 추출한 결정과 MCP가 기록한 결정을 대조해 **기록 누락률·판정 일치율**을 잰다.
 
 ```bash
-pit init                       # .pit/ 폴더 초기화
-pit init --name "프로젝트명"   # 이름 지정
-
-pit projects list              # 현재 프로젝트 목록
-pit projects info              # 현재 프로젝트 정보
+uv tool install git+https://github.com/playidea-lab/pit.git
+PITHUB_URL=https://<서버> pit setup     # 보관함 초기화, 첫 sync, 커넥터 명령 안내
+pit login                               # 웹 설정에서 발급한 토큰
+pit pull && pit audit mcp               # MCP 기록 감사
 ```
 
-### Feature 관리
+## 개발
 
 ```bash
-pit features list              # Feature 목록 (현재 .pit/ 기준)
-pit features create "제목"     # 새 Feature 생성
-pit feature F-0001             # Feature 상세 보기
-pit feature F-0001 --json      # JSON 출력
+uv sync --extra server
+uv run ruff check pit tests && uv run pytest -q          # 단위 (200+)
+docker run -d --name db -e POSTGRES_PASSWORD=x -p 55432:5432 postgres:17
+PITHUB_TEST_DATABASE_URL=postgresql://postgres:x@127.0.0.1:55432/postgres uv run pytest -m integration   # RLS
+cd pithub/web && npm ci && npm run lint && npm run build
 ```
 
-### 헬스 체크
+테스트는 합성 데이터만 쓴다. 실제 세션 기록을 테스트에 넣지 않는다.
 
-```bash
-pit health all                 # 전체 헬스 체크
-pit health project             # 프로젝트 헬스
-pit health feature F-0001      # Feature 헬스
-```
+## 기여할 자리
 
-```
-🟢 Green (80+): 정상 진행
-🟡 Yellow (50-79): 지연/주의
-🔴 Red (<50): 위험/긴급
-```
-
-### Git 연동
-
-```bash
-pit git status                 # 현재 상태
-pit git checkout F-0001        # Feature 브랜치 생성
-pit git branches F-0001        # 관련 브랜치 목록
-```
-
-### LLM 채팅
-
-```bash
-pit chat                       # Claude와 대화하며 기획 정리
-
-# .env에 API 키 필요
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
----
-
-## MCP Server (Claude Desktop 연동)
-
-Claude Desktop에서 pit 도구를 직접 사용할 수 있습니다.
-
-### 설정
-
-`~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "pit": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/pit", "python", "-m", "pit.mcp_server"],
-      "env": {
-        "PIT_ROOT": "/path/to/your-project"
-      }
-    }
-  }
-}
-```
-
-### 사용 가능한 도구
-
-- `pit_detect_context` - 현재 프로젝트 컨텍스트 감지
-- `pit_list_features` - Feature 목록 조회
-- `pit_get_feature` - Feature 상세 조회
-- `pit_create_feature` - 새 Feature 생성
-- `pit_create_decision` - 결정 기록 생성
-- `pit_create_log` - 회의 로그 생성
-- `pit_check_health` - 헬스 체크
-
----
-
-## 프로젝트 구조
-
-```
-pit/
-├── pit/                    # Python 패키지
-│   ├── cli/               # CLI 명령어 (Typer)
-│   │   ├── main.py        # 메인 엔트리
-│   │   ├── features.py    # features 명령어
-│   │   ├── projects.py    # projects 명령어
-│   │   ├── health.py      # health 명령어
-│   │   ├── git.py         # git 명령어
-│   │   ├── chat.py        # chat 명령어
-│   │   └── init.py        # init 명령어
-│   ├── core/              # 핵심 로직
-│   │   ├── context.py     # .pit/ 컨텍스트 감지
-│   │   ├── health_check.py
-│   │   ├── git_integration.py
-│   │   └── chat.py        # LLM 채팅 로직
-│   ├── loaders/           # YAML 로더
-│   ├── models/            # Pydantic 모델
-│   └── mcp_server.py      # MCP Server
-├── .pit/                   # pit 자체 프로젝트 데이터 (dogfooding)
-├── tests/                  # 테스트
-└── docs/                   # 설계 문서
-```
-
----
-
-## 문서
-
-| 문서 | 설명 |
-|------|------|
-| [PIT_OVERVIEW](docs/PIT_OVERVIEW.md) | 프로젝트 정의, 문제, 가치 제안 |
-| [PIT_USAGE_GUIDE](docs/PIT_USAGE_GUIDE.md) | PM/개발자 사용 가이드 |
-| [PIT_DATA_MODEL](docs/PIT_DATA_MODEL.md) | 데이터 스키마 정의 |
-| [PIT_FLOW_SPEC](docs/PIT_FLOW_SPEC.md) | pit-flow 상태 머신 |
-| [PIT_CLI_SPEC](docs/PIT_CLI_SPEC.md) | CLI 명령어 스펙 |
-| [PIT_TECH_STACK](docs/PIT_TECH_STACK.md) | 기술 스택 |
-| [PIT_AGENT_DESIGN](docs/PIT_AGENT_DESIGN.md) | LLM 에이전트 설계 |
-
----
-
-## 기술 스택
-
-- Python 3.11+
-- uv (패키지 관리)
-- Typer + Rich (CLI)
-- Pydantic v2 (데이터 모델)
-- Anthropic Claude API (LLM 연동)
-- MCP (Model Context Protocol)
-- 파일 기반 SSOT (YAML/MD + Git)
-
----
-
-## 테스트
-
-```bash
-uv run pytest -v
-uv run ruff check pit/
-```
-
----
-
-## 현재 상태
-
-**v0.2.0 - .pit/ 폴더 기반 + LLM 연동**
-
-| Feature | Status | Progress |
-|---------|--------|----------|
-| F-0001: CLI MVP | merged | 8/8 |
-| F-0002: 문서 통합 | merged | 6/6 |
-| F-0003: .pit/ 폴더 + LLM | merged | 8/8 |
-| F-0004: pithub 웹 서비스 | planned | 0/8 |
-
----
-
-## Roadmap
-
-- [x] v0.1 - CLI MVP (조회/생성/헬스체크)
-- [x] v0.2 - .pit/ 폴더 기반 + LLM 연동
-- [ ] v0.3 - pithub 웹 서비스 (github → pithub URL 변환)
-- [ ] v0.4 - GitHub Action 연동
-
----
+- **소스 어댑터** — Codex, Gemini, Cursor 세션 기록 파서. `pit/vault/sources.py`의 `SourceAdapter`와
+  `pit/transcripts/events.py`의 `EVENT_BUILDERS`에 등록하면 보관·추출·감사가 그대로 돈다.
+- 검색 순위·원칙 압축 — `docs/PIT_KNOWLEDGE_DESIGN.md`의 단계별 착수 조건을 따른다.
 
 ## 라이선스
 
-MIT
+[AGPL-3.0-or-later](LICENSE). 이 코드로 호스팅 서비스를 제공하면 그 변경도 공개해야 합니다.
