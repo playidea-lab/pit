@@ -9,7 +9,7 @@ interface HeaderProps {
 }
 
 const NAV = [
-  { href: "/inbox", label: "받은함" },
+  { href: "/inbox", label: "정리함" },
   { href: "/decisions", label: "내 결정" },
   { href: "/connect", label: "연결" },
   { href: "/settings", label: "설정" },

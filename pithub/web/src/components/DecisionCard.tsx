@@ -21,12 +21,21 @@ type CardDecision = Pick<
 >;
 
 /** 타임라인·목록의 한 줄. href를 주면 상세로 이어진다. */
-export default function DecisionCard({ decision, href }: { decision: CardDecision; href: string }) {
+export default function DecisionCard({
+  decision,
+  href,
+  unverified = false,
+}: {
+  decision: CardDecision;
+  href: string;
+  unverified?: boolean;
+}) {
   return (
     <Link href={href} className="card-link">
       <div className="mb-3 flex items-center gap-3">
         <VerdictBadge verdict={decision.verdict} chosen={decision.chosen} />
         <span className="faint text-xs">{formatDate(decision.decided_at)}</span>
+        {unverified && <span className="faint ml-auto text-xs">미확인</span>}
       </div>
       <p className="muted mb-1 text-sm">{decision.situation}</p>
       <p className="text-[15px] font-medium text-ink">{decision.proposal}</p>

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { VerdictBadge, formatDate } from "@/components/DecisionCard";
 import Header from "@/components/Header";
+import VerifyBar from "@/components/VerifyBar";
 import { deleteDecision, setVisibility } from "@/lib/actions";
 import { getMyAccount, getMyDecision, getPublicDecision } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
@@ -51,7 +52,7 @@ export default async function DecisionPage({ params }: PageProps) {
           <span>{formatDate(shown.decided_at)}</span>
           {mine && (
             <span className={isPublic ? "text-[var(--approve-fg)]" : ""}>
-              {VISIBILITY_LABEL[mine.visibility]} · {mine.status === "confirmed" ? "확정" : mine.status}
+              {VISIBILITY_LABEL[mine.visibility]} · {mine.status === "confirmed" ? "확인됨" : "미확인"}
             </span>
           )}
         </div>
@@ -89,6 +90,15 @@ export default async function DecisionPage({ params }: PageProps) {
             </Row>
           )}
         </div>
+
+        {mine && mine.status === "draft" && (
+          <div className="card mt-6 border-[var(--accent)]/30 bg-[var(--accent-soft)]/40">
+            <p className="mb-3 text-sm text-ink">
+              AI가 기록했고 아직 확인하지 않은 결정입니다. 공유하려면 먼저 확인해 주세요.
+            </p>
+            <VerifyBar decision={mine} compact />
+          </div>
+        )}
 
         {mine && mine.status === "confirmed" && (
           <div className="mt-6 flex items-center gap-2">

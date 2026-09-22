@@ -6,7 +6,7 @@ import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 
 const POINTS = [
   ["원문은 나가지 않습니다", "대화 자체는 저장하지 않습니다. 결정 한 건의 요약과 당신의 말 한 줄만 받습니다."],
-  ["기본은 비공개", "받은함은 본인만 봅니다. 확정한 뒤 결정마다 공개 여부를 정합니다."],
+  ["기본은 비공개", "기록은 본인만 봅니다. 확인한 것만, 결정마다 골라 공개합니다."],
   ["언제든 지웁니다", "결정 하나든 계정 전체든, 삭제하면 정말로 사라집니다."],
 ];
 
@@ -26,7 +26,7 @@ export default async function HomePage() {
         </h1>
         <p className="muted mb-10 max-w-xl text-[17px] leading-relaxed">
           claude.ai · Claude Code · Codex에 pithub를 연결하면, 당신이 제안을 승인하고 고치고 거부한 순간이
-          받은함에 쌓입니다. 하루 몇 분 검토해 확정하고, 원하는 것만 공개하세요. 다음 세션의 AI는 당신이
+          자동으로 기록되고 곧바로 검색됩니다. 공개할 것만 그때 확인하세요. 다음 세션의 AI는 당신이
           예전에 어떻게 결정했는지 찾아볼 수 있습니다.
         </p>
         <div className="flex gap-2">
@@ -35,7 +35,7 @@ export default async function HomePage() {
           </Link>
           {user && (
             <Link href="/inbox" className="btn btn-secondary h-10 px-5">
-              받은함 열기
+              정리함 열기
             </Link>
           )}
         </div>
