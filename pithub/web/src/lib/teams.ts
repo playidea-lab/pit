@@ -96,7 +96,8 @@ export async function getTeamBySlug(supabase: SupabaseClient, slug: string): Pro
 export async function listTeamMembers(supabase: SupabaseClient, teamId: string): Promise<TeamMember[]> {
   const { data, error } = await supabase
     .from("team_members")
-    .select("team_id, github_id, role, accepted_at, accounts(github_login, avatar_url)")
+    // accounts 로 가는 외래키가 둘(github_id · invited_by)이라 어느 것인지 명시한다
+    .select("team_id, github_id, role, accepted_at, accounts!team_members_github_id_fkey(github_login, avatar_url)")
     .eq("team_id", teamId)
     .order("joined_at", { ascending: true });
   if (error) fail("listTeamMembers", error);
