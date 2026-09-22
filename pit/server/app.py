@@ -17,16 +17,20 @@ from fastmcp.server.auth.providers.github import GitHubProvider
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from pydantic import Field
+from starlette.middleware import Middleware
 
 from pit.server.api import LocalApi
 from pit.server.identity import Caller, NotAuthenticatedError, current_caller
 from pit.server.ratelimit import RateLimiter
 from pit.server.repository import DecisionRepository, RepositoryError, SupabaseRepository
+from pit.server.routing import TeamConnectorMiddleware
 from pit.server.settings import GITHUB_SCOPES, ServerSettings
 from pit.server.tools import DEFAULT_SEARCH_LIMIT, DecisionTools, ToolFailure
 
 SERVER_NAME = "pithub"
 ResultT = TypeVar("ResultT")
+# `/t/<slug>/mcp` 팀 커넥터 주소를 `/mcp` 로 태운다 (run 과 http_app 양쪽에 같은 목록)
+HTTP_MIDDLEWARE = [Middleware(TeamConnectorMiddleware)]
 
 # 세 클라이언트(claude.ai · Claude Code · Codex)의 모델이 읽는 글이다.
 SERVER_INSTRUCTIONS = """\
@@ -60,6 +64,12 @@ Results are short summaries. Call `get_decision` for the full record of the ones
 that call is how pithub learns which records are useful. Results marked `verified: false` were recorded
 automatically and not yet confirmed by the user; cite them with that caveat. `principle: true` marks a rule
 the user wants followed.
+
+Teams: if this connection came through a team address (`/t/<team>/mcp`), decisions are recorded for that
+team and searches include the team's confirmed decisions by default. Results with `by` are a teammate's —
+say whose they are when you rely on them ("last month <by> rejected the same approach"). Team principles
+rank first. You never see a teammate's unconfirmed or private records. Pass `scope` to search only your
+own (`mine`) or a specific team (`team:<slug>`).
 """
 
 STORAGE_NOT_READY = "pithub 저장소가 아직 준비되지 않았습니다. 기록은 저장되지 않았습니다."
@@ -148,15 +158,16 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         query: Annotated[str, Field(description="Words to look for in this user's confirmed past decisions.")],
         limit: Annotated[int, Field(description="Maximum results.")] = DEFAULT_SEARCH_LIMIT,
         client: Annotated[str | None, Field(description="Which app this is: claude.ai, claude-code, codex, ...")] = None,
+        scope: Annotated[str | None, Field(description="mine | team | team:<slug>. Default: team when connected through a team address, else mine.")] = None,
     ) -> list[dict[str, object]]:
-        """Find how this user decided similar things before. Returns short summaries; call get_decision for the full record of the ones you actually use."""
-        return await _run(ready().search_my_decisions(_caller(), query, limit, client))
+        """Find how this user (and, through a team address, their team) decided similar things before. Returns short summaries; call get_decision for the full record of the ones you actually use."""
+        return await _run(ready().search_my_decisions(_caller(), query, limit, client, scope))
 
     @server.tool
     async def get_decision(
         decision_id: Annotated[str, Field(description="An id returned by search_my_decisions or record_decision.")],
     ) -> dict[str, object]:
-        """Read one of this user's decisions in full."""
+        """Read one decision in full — this user's own, or a teammate's confirmed team decision."""
         return await _run(ready().get_decision(_caller(), decision_id))
 
     if repository is not None:

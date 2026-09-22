@@ -61,6 +61,12 @@ export default async function ConnectPage() {
           <Code>{`codex mcp add pithub --url ${mcpUrl}\ncodex mcp login pithub`}</Code>
         </Step>
 
+        <Step title="팀으로 기록하려면">
+          팀 저장소에는 개인 주소 대신 <b className="text-ink">팀 커넥터 주소</b>(<code className="text-ink">…/t/&lt;팀&gt;/mcp</code>)를
+          <code className="text-ink">.mcp.json</code>으로 커밋해 둡니다. 그 저장소에서 일하는 팀원의 결정은 아무것도 고르지
+          않아도 팀 범위로 기록되고, 각자 확인한 것만 팀에 보입니다. 주소는 팀 페이지에 있습니다.
+        </Step>
+
         <Step title="기록을 더 잘 남기게 하려면 (선택)">
           도구를 언제 부를지는 AI가 정합니다. 특히 &ldquo;아니, 그거 말고&rdquo; 같은 거부는 빠지기 쉽습니다. 아래
           문장을 claude.ai의 프로필 지침이나 프로젝트의 <code className="text-ink">CLAUDE.md</code>,{" "}

@@ -17,6 +17,7 @@ function Item({ decision }: { decision: Decision }) {
         <VerdictBadge verdict={decision.verdict} chosen={decision.chosen} />
         <span className="faint">{formatDate(decision.decided_at)}</span>
         {decision.source.project && <span className="faint">{decision.source.project}</span>}
+        {decision.visibility === "team" && <span className="badge badge-choice">팀 · 확인하면 팀에 보임</span>}
         {redacted > 0 && <span className="badge badge-modify">가림 {redacted}곳</span>}
         {decision.tags.includes("principle") && <span className="badge badge-choice">원칙</span>}
         {decision.supersedes.length > 0 && <span className="badge badge-choice">이전 결정을 뒤집음</span>}
@@ -88,7 +89,7 @@ export default async function TriagePage() {
               <div>
                 <div className="mb-3 flex items-baseline gap-3">
                   <h2 className="text-[15px] font-semibold text-ink">봐 둘 만한 것</h2>
-                  <span className="faint text-xs">거부·수정, 원칙, 뒤집은 결정, 가림, 설명에 판정이 섞인 기록 · {flagged.length}건</span>
+                  <span className="faint text-xs">팀에 갈 기록, 거부·수정, 원칙, 뒤집은 결정, 가림, 설명에 판정이 섞인 기록 · {flagged.length}건</span>
                 </div>
                 <div className="space-y-3">
                   {flagged.map((d) => (

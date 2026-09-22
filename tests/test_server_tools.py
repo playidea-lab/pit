@@ -62,7 +62,7 @@ def test_record_decision_stores_private_draft_for_the_caller():
     result = _run(_tools(repository).record_decision(ALICE, _arguments(client="claude.ai")))
 
     (row,) = repository.rows
-    assert result == {"id": row.id, "status": "recorded", "redacted": 0}
+    assert result == {"id": row.id, "status": "recorded", "redacted": 0, "visibility": "private"}
     assert (row.owner_github_id, row.status, row.visibility, row.origin) == (1001, "draft", "private", "mcp")
     assert (row.kind, row.verdict, row.reject_kind) == ("verdict", "reject", "redirect")
     assert row.source == {"client": "claude.ai"}
@@ -411,3 +411,170 @@ def test_search_summary_is_bounded():
     (item,) = _run(tools.search_my_decisions(ALICE, "캐시"))
 
     assert len(item["proposal"]) <= 140 and len(item["human_quote"]) <= 140
+
+
+# --- 팀 커넥터 · 팀 범위 검색 (D-0008) ------------------------------------------
+
+TEAM_ID = "11111111-1111-1111-1111-111111111111"
+ALICE_IN_PILAB = Caller(github_id=1001, github_login="alice", team_slug="pilab")
+BOB_IN_PILAB = Caller(github_id=2002, github_login="bob", team_slug="pilab")
+
+
+def _team_repository() -> InMemoryRepository:
+    repository = InMemoryRepository()
+    repository.memberships = {1001: [(TEAM_ID, "pilab")], 2002: [(TEAM_ID, "pilab")]}
+    return repository
+
+
+def test_record_decision_through_team_address_is_team_scoped_draft():
+    """팀 저장소의 커넥터로 들어온 기록은 아무것도 고르지 않아도 그 팀의 것이다 — 단 확정 전엔 초안"""
+    repository = _team_repository()
+    tools = _tools(repository)
+
+    result = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(project="anything")))
+
+    stored = repository.rows[0]
+    assert result["visibility"] == "team"
+    assert (stored.visibility, stored.team_id, stored.status, stored.source["team"]) == ("team", TEAM_ID, "draft", "pilab")
+
+
+def test_record_decision_through_team_address_by_non_member_is_refused_and_stores_nothing():
+    repository = _team_repository()
+    tools = _tools(repository)
+    stranger = Caller(github_id=3003, github_login="carol", team_slug="pilab")
+
+    with pytest.raises(ToolFailure, match="구성원이 아닙니다"):
+        _run(tools.record_decision(stranger, _arguments()))
+
+    assert repository.rows == []
+
+
+def test_team_address_beats_project_default():
+    repository = _team_repository()
+    repository.project_defaults[(1001, "pit")] = ("public", None)
+    tools = _tools(repository)
+
+    _run(tools.record_decision(ALICE_IN_PILAB, _arguments(project="pit")))
+
+    assert (repository.rows[0].visibility, repository.rows[0].team_id) == ("team", TEAM_ID)
+
+
+def test_team_search_returns_teammates_confirmed_team_decisions_with_author():
+    """팀원의 확정된 팀 결정은 `by` 와 함께 나오고, 초안·비공개는 절대 나오지 않는다"""
+    repository = _team_repository()
+    tools = _tools(repository)
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="캐시 A", human_quote="밥의 확정 팀 결정")))
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="캐시 B", human_quote="밥의 초안 팀 결정")))
+    _run(tools.record_decision(BOB, _arguments(proposal="캐시 C", human_quote="밥의 확정 비공개 결정")))
+    _run(tools.record_decision(ALICE, _arguments(proposal="캐시 D", human_quote="앨리스 자기 초안")))
+    repository.rows[0] = repository.rows[0].model_copy(update={"status": "confirmed"})
+    repository.rows[2] = repository.rows[2].model_copy(update={"status": "confirmed"})
+
+    found = _run(tools.search_my_decisions(ALICE_IN_PILAB, "캐시"))
+
+    assert sorted((item["human_quote"], item.get("by"), item.get("team")) for item in found) == [
+        ("밥의 확정 팀 결정", "bob", "pilab"),
+        ("앨리스 자기 초안", None, None),
+    ]
+
+
+def test_search_scope_mine_excludes_team_even_through_team_address():
+    repository = _team_repository()
+    tools = _tools(repository)
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(human_quote="밥의 팀 결정")))
+    _confirm(repository)
+
+    assert _run(tools.search_my_decisions(ALICE_IN_PILAB, "캐시", scope="mine")) == []
+    assert len(_run(tools.search_my_decisions(ALICE, "캐시", scope="team"))) == 1
+    assert len(_run(tools.search_my_decisions(ALICE, "캐시", scope="team:pilab"))) == 1
+
+
+@pytest.mark.parametrize("scope", ["team:others", "everything"])
+def test_search_unknown_scope_or_foreign_team_is_refused(scope: str):
+    tools = _tools(_team_repository())
+
+    with pytest.raises(ToolFailure):
+        _run(tools.search_my_decisions(ALICE, "캐시", scope=scope))
+
+
+def test_get_decision_of_teammate_is_readable_only_when_confirmed_team_scoped():
+    repository = _team_repository()
+    tools = _tools(repository)
+    team_id = _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="팀 것")))["id"]
+    private_id = _run(tools.record_decision(BOB, _arguments(proposal="비공개 것")))["id"]
+
+    with pytest.raises(ToolFailure, match="그런 결정이 없습니다"):
+        _run(tools.get_decision(ALICE, team_id))  # 아직 초안
+    repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
+    detail = _run(tools.get_decision(ALICE, team_id))
+    assert (detail["by"], detail["team"], detail["proposal"]) == ("bob", "pilab", "팀 것")
+    assert next(r for r in repository.rows if r.id == team_id).cited_count == 1
+    with pytest.raises(ToolFailure, match="그런 결정이 없습니다"):
+        _run(tools.get_decision(ALICE, private_id))
+
+
+def test_team_principle_ranks_above_own_recent_record():
+    repository = _team_repository()
+    tools = _tools(repository)
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="평가는 시간 분할로만", tags=["principle"], human_quote="팀 원칙")))
+    _confirm(repository)
+    _run(tools.record_decision(ALICE, _arguments(proposal="평가 방법 임시", human_quote="내 최근 것")))
+
+    found = _run(tools.search_my_decisions(ALICE, "평가", scope="team"))
+
+    assert [item["human_quote"] for item in found] == ["팀 원칙", "내 최근 것"]
+
+
+# --- 팀 커넥터 주소 (HTTP 경로) ---------------------------------------------------
+
+
+def _scope_seen_by(app_path: str) -> dict:
+    from pit.server.routing import TeamConnectorMiddleware
+
+    seen: dict = {}
+
+    async def inner(scope, receive, send):  # noqa: ANN001, ANN202
+        seen.update(scope)
+
+    scope = {"type": "http", "path": app_path, "raw_path": app_path.encode(), "state": {}}
+    asyncio.run(TeamConnectorMiddleware(inner)(scope, lambda: None, lambda _: None))
+    return seen
+
+
+def test_team_path_is_routed_to_mcp_with_team_in_state():
+    seen = _scope_seen_by("/t/pilab/mcp")
+
+    assert (seen["path"], seen["raw_path"], seen["state"]["pithub_team"]) == ("/mcp", b"/mcp", "pilab")
+
+
+@pytest.mark.parametrize("path", ["/mcp", "/t/PILAB/mcp", "/t/pilab/other", "/t/p/mcp", "/api/v1/me"])
+def test_other_paths_pass_through_untouched(path: str):
+    seen = _scope_seen_by(path)
+
+    assert seen["path"] == path
+    assert "pithub_team" not in seen["state"]
+
+
+def test_team_address_reaches_the_mcp_endpoint_and_requires_auth():
+    """팀 주소도 인증 없이는 401 — 같은 엔드포인트, 같은 문지기"""
+    from pit.server.app import HTTP_MIDDLEWARE
+
+    app = build_server(SETTINGS, InMemoryRepository()).http_app(middleware=HTTP_MIDDLEWARE)
+    transport = httpx.ASGITransport(app=app)
+
+    async def probe(path: str) -> int:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return (await client.post(path, json={})).status_code
+
+    assert asyncio.run(probe("/t/pilab/mcp")) == asyncio.run(probe("/mcp")) == 401
+
+
+def test_current_team_slug_reads_path_state_then_query(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    monkeypatch.setattr(identity, "get_http_request", lambda: NS(scope={"state": {"pithub_team": "pilab"}}, query_params={}))
+    assert identity.current_team_slug() == "pilab"
+    monkeypatch.setattr(identity, "get_http_request", lambda: NS(scope={"state": {}}, query_params={"team": "q-team"}))
+    assert identity.current_team_slug() == "q-team"
+    monkeypatch.setattr(identity, "get_http_request", lambda: NS(scope={}, query_params={}))
+    assert identity.current_team_slug() is None

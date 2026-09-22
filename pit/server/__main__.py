@@ -3,7 +3,7 @@
 import logging
 import sys
 
-from pit.server.app import build_server
+from pit.server.app import HTTP_MIDDLEWARE, build_server
 from pit.server.settings import SettingsError, load_settings
 
 logger = logging.getLogger("pit.server")
@@ -21,7 +21,7 @@ def main() -> None:
     # stateless: 요청마다 독립 처리. 재배포로 프로세스가 바뀌어도 클라이언트의 세션 ID가
     # 무효가 되지 않는다 ("No valid session ID"). 서버가 먼저 알림을 보낼 일이 없어 잃는 것이 없다.
     build_server(settings).run(
-        transport="http", host=settings.host, port=settings.port, stateless_http=True
+        transport="http", host=settings.host, port=settings.port, stateless_http=True, middleware=HTTP_MIDDLEWARE
     )
 
 

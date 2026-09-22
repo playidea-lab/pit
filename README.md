@@ -31,7 +31,7 @@ claude.ai · Claude Code · Codex에 MCP 커넥터 하나를 붙이면, 당신�
 | 디렉터리 | 무엇 |
 |---|---|
 | `pit/server/` | 원격 MCP 서버 (FastMCP, GitHub OAuth). 도구: `record_decision` · `search_my_decisions` · `get_decision` · `whoami`, 로컬 CLI용 토큰 API |
-| `pithub/web/` | Next.js 웹 — 정리함, 내 결정, 공개 페이지 `/u/<아이디>`, 설정 |
+| `pithub/web/` | Next.js 웹 — 정리함, 내 결정, 팀 `/t/<팀>`(커넥터 주소·원칙·AGENTS.md 초안), 공개 페이지 `/u/<아이디>`, 설정 |
 | `pithub/supabase/` | Postgres 스키마와 RLS (마이그레이션) |
 | `pit/` (그 외) | 로컬 CLI `pit` — 세션 원문 보관함, 결정 추출, MCP 기록 감사, push/pull |
 | `docs/` | 설계 문서. `PIT_KNOWLEDGE_DESIGN.md`(생애주기), `BACKFILL_MEMORY.md`(메모 백필) |
@@ -42,6 +42,10 @@ claude.ai · Claude Code · Codex에 MCP 커넥터 하나를 붙이면, 당신�
 1. 도구에 커넥터를 추가한다 — claude.ai: 설정 → 커넥터 → 커스텀 커넥터 · Claude Code: `claude mcp add --transport http pithub <MCP URL>` · Codex: Settings → MCP servers
 2. GitHub로 로그인한다.
 3. 끝. 평소처럼 일하면 된다. 웹의 정리함에는 봐 둘 만한 것만 온다.
+
+**팀**: 웹에서 팀을 만들고 GitHub 아이디로 초대한다(본인이 수락). 팀 저장소에 팀 커넥터 주소 `…/t/<팀>/mcp`를
+`.mcp.json`으로 커밋해 두면, 그 저장소에서 일하는 팀원의 결정은 아무것도 고르지 않아도 팀 범위로 기록되고,
+각자 확인한 것만 팀에 보인다. 팀원의 AI는 `search_my_decisions`로 팀 원칙과 서로의 확정된 결정을 찾는다.
 
 ## 직접 돌리기 (셀프호스트)
 

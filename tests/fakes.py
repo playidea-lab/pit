@@ -52,6 +52,8 @@ class InMemoryRepository:
         self.tokens: dict[str, tuple[int, str]] = {}
         # (github_id, project) → (visibility, team_id)
         self.project_defaults: dict[tuple[int, str], tuple[str, str | None]] = {}
+        # github_id → [(team_id, slug)] — 수락까지 끝난 팀만
+        self.memberships: dict[int, list[tuple[str, str]]] = {}
         self.fail_with: Exception | None = None
 
     def _maybe_fail(self) -> None:
@@ -139,3 +141,25 @@ class InMemoryRepository:
             if r.id == decision_id and r.owner_github_id == owner_github_id else r
             for r in self.rows
         ]
+
+    async def member_teams(self, github_id: int) -> list[tuple[str, str]]:
+        self._maybe_fail()
+        return list(self.memberships.get(github_id, []))
+
+    async def search_team(self, team_ids: list[str], query: str, limit: int) -> list:
+        self._maybe_fail()
+        needle = query.lower()
+        found = [
+            row
+            for row in self.rows
+            if row.team_id in team_ids and row.status == "confirmed" and row.visibility == "team"
+            and needle in f"{row.situation} {row.proposal} {row.rationale} {row.human_quote}".lower()
+        ]
+        return found[:limit]
+
+    async def get_by_id(self, decision_id: str):  # noqa: ANN201
+        self._maybe_fail()
+        return next((row for row in self.rows if row.id == decision_id), None)
+
+    async def logins_of(self, github_ids: list[int]) -> dict[int, str]:
+        return {github_id: self.accounts.get(github_id, f"user{github_id}") for github_id in github_ids}

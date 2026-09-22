@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 HTTP_TIMEOUT_SECONDS = 10.0
 STATUS_DISCARDED = "discarded"
+STATUS_CONFIRMED = "confirmed"
 SEARCH_COLUMNS = ("situation", "proposal", "rationale", "human_quote")
 # PostgREST의 or=() 문법에서 뜻을 갖는 문자. 검색어에서 빼 버린다 (v1은 단순 부분 일치로 충분하다).
 _FILTER_SYNTAX = re.compile(r'[,()"\\*%]')
@@ -59,6 +60,22 @@ class DecisionRepository(Protocol):
     async def mark_cited(self, owner_github_id: int, decision_id: str) -> None:
         """get_decision 으로 전체를 가져간 것을 '쓰였다'로 센다"""
         ...
+
+    # --- 팀 (D-0008) ---
+
+    async def member_teams(self, github_id: int) -> list[tuple[str, str]]:
+        """수락까지 끝난 팀들의 (team_id, slug)"""
+        ...
+
+    async def search_team(self, team_ids: list[str], query: str, limit: int) -> list[StoredDecision]:
+        """팀 범위로 확정된 결정만 — 초안·비공개는 팀에 보이지 않는다"""
+        ...
+
+    async def get_by_id(self, decision_id: str) -> StoredDecision | None:
+        """소유자를 묻지 않고 한 건. 누가 볼 수 있는지는 호출자가 판단한다."""
+        ...
+
+    async def logins_of(self, github_ids: list[int]) -> dict[int, str]: ...
 
     # --- 로컬 pit 용 (TokenRepository) ---
 
@@ -216,6 +233,39 @@ class SupabaseRepository:
             "POST", "/citations", headers={"Prefer": "return=minimal"},
             json={"owner_github_id": owner_github_id, "query": query, "returned_ids": returned_ids, "client": client},
         )  # fmt: skip
+
+    async def member_teams(self, github_id: int) -> list[tuple[str, str]]:
+        params = {"github_id": f"eq.{github_id}", "accepted_at": "not.is.null", "select": "team_id,teams!inner(slug)"}
+        rows = (await self._request("GET", "/team_members", params=params)).json()
+        return [(str(row["team_id"]), str(row["teams"]["slug"])) for row in rows]
+
+    async def search_team(self, team_ids: list[str], query: str, limit: int) -> list[StoredDecision]:
+        if not team_ids:
+            return []
+        params = {
+            "team_id": "in.(" + ",".join(team_ids) + ")",
+            "status": f"eq.{STATUS_CONFIRMED}",
+            "visibility": "eq.team",
+            "order": "decided_at.desc",
+            "limit": str(limit),
+        }
+        cleaned = sanitize_query(query)
+        if cleaned:
+            params["or"] = "(" + ",".join(f"{column}.ilike.*{cleaned}*" for column in SEARCH_COLUMNS) + ")"
+        response = await self._request("GET", "/decisions", params=params)
+        return [StoredDecision.model_validate(row) for row in response.json()]
+
+    async def get_by_id(self, decision_id: str) -> StoredDecision | None:
+        rows = (await self._request("GET", "/decisions", params={"id": f"eq.{decision_id}", "limit": "1"})).json()
+        return StoredDecision.model_validate(rows[0]) if rows else None
+
+    async def logins_of(self, github_ids: list[int]) -> dict[int, str]:
+        if not github_ids:
+            return {}
+        ids = ",".join(str(github_id) for github_id in set(github_ids))
+        params = {"github_id": f"in.({ids})", "select": "github_id,github_login"}
+        rows = (await self._request("GET", "/accounts", params=params)).json()
+        return {int(row["github_id"]): str(row["github_login"]) for row in rows}
 
     async def mark_cited(self, owner_github_id: int, decision_id: str) -> None:
         params = {"id": f"eq.{decision_id}", "owner_github_id": f"eq.{owner_github_id}", "select": "cited_count"}

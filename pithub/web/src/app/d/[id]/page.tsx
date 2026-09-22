@@ -7,6 +7,7 @@ import VerifyBar from "@/components/VerifyBar";
 import { deleteDecision, setVisibility } from "@/lib/actions";
 import { getMyAccount, getMyDecision, getPublicDecision } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
+import { getTeamDecision } from "@/lib/teams";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,8 @@ const VISIBILITY_LABEL: Record<string, string> = {
 };
 
 /**
- * 결정 상세. 소유자에게는 전체 열과 공개·삭제 조작이, 그 밖의 사람에게는 공개 뷰의 열만 보인다.
- * 남의 비공개 결정은 존재 여부도 알려 주지 않는다(404).
+ * 결정 상세. 소유자에게는 전체 열과 공개·삭제 조작이, 팀원에게는 팀 뷰의 열이, 그 밖의 사람에게는 공개 뷰의
+ * 열만 보인다. 남의 비공개 결정은 존재 여부도 알려 주지 않는다(404).
  */
 export default async function DecisionPage({ params }: PageProps) {
   const { id } = await params;
@@ -32,11 +33,12 @@ export default async function DecisionPage({ params }: PageProps) {
   const account = user ? await getMyAccount(supabase) : null;
 
   const mine = user ? await getMyDecision(supabase, id) : null;
-  const published = mine ? null : await getPublicDecision(supabase, id);
-  const shown = mine ?? published;
+  const teamShown = mine || !user ? null : await getTeamDecision(supabase, id);
+  const published = mine || teamShown ? null : await getPublicDecision(supabase, id);
+  const shown = mine ?? teamShown ?? published;
   if (!shown) notFound();
 
-  const owner = mine ? account?.github_login : published?.github_login;
+  const owner = mine ? account?.github_login : (teamShown ?? published)?.github_login;
   const isPublic = mine?.visibility === "public";
 
   return (
@@ -54,6 +56,11 @@ export default async function DecisionPage({ params }: PageProps) {
             <span className={isPublic ? "text-[var(--approve-fg)]" : ""}>
               {VISIBILITY_LABEL[mine.visibility]} · {mine.status === "confirmed" ? "확인됨" : "미확인"}
             </span>
+          )}
+          {teamShown && (
+            <Link href={`/t/${teamShown.team_slug}`} className="muted hover:text-ink">
+              팀 · {teamShown.team_slug}
+            </Link>
           )}
         </div>
 

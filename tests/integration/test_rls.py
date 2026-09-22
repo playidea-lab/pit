@@ -295,8 +295,22 @@ def _team(conn, slug: str, owner_github_id: int) -> str:  # noqa: ANN001
     row = conn.execute(
         "insert into public.teams (slug, name, created_by) values (%s, %s, %s) returning id", (slug, slug, owner_github_id)
     ).fetchone()
-    conn.execute("insert into public.team_members (team_id, github_id, role) values (%s, %s, 'owner')", (row[0], owner_github_id))
+    conn.execute(
+        "insert into public.team_members (team_id, github_id, role, accepted_at) values (%s, %s, 'owner', now())",
+        (row[0], owner_github_id),
+    )
     return str(row[0])
+
+
+def _join(conn, team: str, github_id: int) -> None:  # noqa: ANN001
+    """수락까지 끝난 구성원 (service_role 경로)"""
+    conn.execute(
+        "insert into public.accounts (github_id, github_login) values (%s, %s) on conflict do nothing",
+        (github_id, f"user{github_id}"),
+    )
+    conn.execute(
+        "insert into public.team_members (team_id, github_id, accepted_at) values (%s, %s, now())", (team, github_id)
+    )
 
 
 def _share(conn, decision_id: str, visibility: str, team_id: str | None = None) -> None:  # noqa: ANN001
@@ -312,15 +326,19 @@ def test_team_scoped_decision_visible_to_members_only(db):
     carol_id = 3003
     db.execute("insert into public.accounts (github_id, github_login) values (%s, 'carol')", (carol_id,))
     team = _team(db, "pilab", ALICE_GITHUB_ID)
-    db.execute("insert into public.team_members (team_id, github_id) values (%s, %s)", (team, BOB_GITHUB_ID))
+    _join(db, team, BOB_GITHUB_ID)
     _share(db, "PD-team", "team", team)
     bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
     carol = sign_in_with_github(db, carol_id, "carol")
 
     with acting_as(db, "authenticated", bob):
-        assert sorted(ids(db, "select id from public.decisions")) == ["PD-bob-private", "PD-team"]
+        assert ids(db, "select id from public.decisions") == ["PD-bob-private"]
+        assert ids(db, "select id from public.team_decisions") == ["PD-team"]
+        # 팀원이 보는 열에 출처·가림 내역은 없다
+        columns = {column.name for column in db.execute("select * from public.team_decisions limit 0").description}
+        assert not columns & {"source", "redactions", "status", "visibility"}
     with acting_as(db, "authenticated", carol):
-        assert ids(db, "select id from public.decisions") == []
+        assert ids(db, "select id from public.team_decisions") == []
     with acting_as(db, "anon"):
         assert ids(db, "select id from public.public_decisions") == []
 
@@ -330,13 +348,13 @@ def test_team_decision_still_visible_after_owner_leaves_but_private_never_was(db
     record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-team")
     record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-private")
     team = _team(db, "pilab", BOB_GITHUB_ID)
-    db.execute("insert into public.team_members (team_id, github_id) values (%s, %s)", (team, ALICE_GITHUB_ID))
+    _join(db, team, ALICE_GITHUB_ID)
     _share(db, "PD-team", "team", team)
     bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
     db.execute("delete from public.team_members where team_id = %s and github_id = %s", (team, ALICE_GITHUB_ID))
 
     with acting_as(db, "authenticated", bob):
-        assert ids(db, "select id from public.decisions") == ["PD-team"]
+        assert ids(db, "select id from public.team_decisions") == ["PD-team"]
 
 
 def test_friends_scope_requires_mutual_acceptance(db):
@@ -347,11 +365,12 @@ def test_friends_scope_requires_mutual_acceptance(db):
     db.execute("insert into public.follows (from_github_id, to_github_id, accepted) values (%s, %s, false)", (BOB_GITHUB_ID, ALICE_GITHUB_ID))
 
     with acting_as(db, "authenticated", bob):
-        assert ids(db, "select id from public.decisions") == []
+        assert ids(db, "select id from public.friends_decisions") == []
 
     db.execute("update public.follows set accepted = true where from_github_id = %s", (BOB_GITHUB_ID,))
     with acting_as(db, "authenticated", bob):
-        assert ids(db, "select id from public.decisions") == ["PD-friends"]
+        assert ids(db, "select id from public.friends_decisions") == ["PD-friends"]
+        assert ids(db, "select id from public.decisions") == []
 
 
 def test_follow_request_can_only_be_accepted_by_its_target(db):
@@ -369,12 +388,12 @@ def test_draft_with_team_scope_is_not_shown_to_team_until_confirmed(db):
     """범위는 의도다. 확정 전에는 팀도 보지 못한다."""
     record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-draft")
     team = _team(db, "pilab", BOB_GITHUB_ID)
-    db.execute("insert into public.team_members (team_id, github_id) values (%s, %s)", (team, ALICE_GITHUB_ID))
+    _join(db, team, ALICE_GITHUB_ID)
     db.execute("update public.decisions set visibility = 'team', team_id = %s where id = 'PD-draft'", (team,))
     bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
 
     with acting_as(db, "authenticated", bob):
-        assert ids(db, "select id from public.decisions") == []
+        assert ids(db, "select id from public.team_decisions") == []
 
 
 def test_consult_log_readable_by_twin_owner_only(db):
@@ -416,3 +435,93 @@ def test_citations_readable_by_owner_only_and_trgm_index_exists(db):
     with acting_as(db, "authenticated", bob):
         assert db.execute("select count(*) from public.citations").fetchone()[0] == 0
     assert db.execute("select count(*) from pg_indexes where indexname = 'decisions_proposal_trgm'").fetchone()[0] == 1
+
+
+# --- 팀 운용: 초대 · 수락 · 탈퇴 (D-0008) -------------------------------------
+
+
+def test_create_team_makes_caller_an_accepted_owner(db):
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with acting_as(db, "authenticated", alice):
+        team = db.execute("select public.create_team('pilab', 'PI Lab')").fetchone()[0]
+        row = db.execute("select role, accepted_at is not null from public.team_members where team_id = %s", (team,)).fetchone()
+        assert row == ("owner", True)
+        assert ids(db, "select slug from public.teams") == ["pilab"]
+
+
+def test_authenticated_user_cannot_insert_teams_or_members_directly(db):
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", alice):
+        db.execute("insert into public.teams (slug, name, created_by) values ('x', 'x', %s)", (ALICE_GITHUB_ID,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", alice):
+        db.execute("insert into public.team_members (team_id, github_id) values (gen_random_uuid(), %s)", (ALICE_GITHUB_ID,))
+
+
+def test_invite_is_visible_to_invitee_and_only_they_can_accept(db):
+    """초대는 소유자가 보내고, 수락은 본인만. 수락 전에는 팀 결정이 보이지 않는다."""
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-team")
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _share(db, "PD-team", "team", team)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    carol = sign_in_with_github(db, 3003, "carol")
+
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.invite_to_team(%s, 'bob')", (team,))
+    with acting_as(db, "authenticated", bob):
+        assert ids(db, "select slug from public.teams") == ["pilab"]
+        assert ids(db, "select github_login from public.accounts order by 1") == ["alice", "bob"]
+        assert ids(db, "select id from public.team_decisions") == []
+    with acting_as(db, "authenticated", carol):
+        assert ids(db, "select slug from public.teams") == []
+        accepted_by_stranger = db.execute("update public.team_members set accepted_at = now()").rowcount
+    assert accepted_by_stranger == 0
+
+    with acting_as(db, "authenticated", bob):
+        assert db.execute("update public.team_members set accepted_at = now()").rowcount == 1
+        assert ids(db, "select id from public.team_decisions") == ["PD-team"]
+
+
+def test_only_owner_can_invite_and_unknown_login_is_refused(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", bob):
+        db.execute("select public.invite_to_team(%s, 'alice')", (team,))
+    with pytest.raises(psycopg.errors.NoDataFound), acting_as(db, "authenticated", alice):
+        db.execute("select public.invite_to_team(%s, 'nobody')", (team,))
+
+
+def test_member_can_leave_and_owner_can_remove_but_member_cannot_remove_others(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    _join(db, team, 3003)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+
+    with acting_as(db, "authenticated", bob):
+        assert db.execute("delete from public.team_members where github_id = 3003").rowcount == 0
+        assert db.execute("delete from public.team_members where github_id = %s", (BOB_GITHUB_ID,)).rowcount == 1
+    with acting_as(db, "authenticated", alice):
+        assert db.execute("delete from public.team_members where github_id = 3003").rowcount == 1
+
+
+def test_team_survives_its_creator_deleting_their_account(db):
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-alice-team")
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    _share(db, "PD-alice-team", "team", team)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.delete_my_account()")
+
+    assert ids(db, "select slug from public.teams") == ["pilab"]
+    with acting_as(db, "authenticated", bob):
+        # 계정과 함께 결정도 사라진다 — 팀에 남는 것은 팀이지 그 사람의 결정이 아니다
+        assert ids(db, "select id from public.team_decisions") == []

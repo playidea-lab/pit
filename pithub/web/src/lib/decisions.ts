@@ -104,6 +104,8 @@ export function leaksVerdict(decision: Pick<Decision, "situation" | "proposal">)
 export function needsAttention(decision: Decision): boolean {
   const redacted = Object.values(decision.redactions).some((n) => n > 0);
   return (
+    // 팀 범위 초안은 확인해야 팀에 보인다 — 기다리는 독자가 있다
+    decision.visibility === "team" ||
     decision.verdict === "reject" ||
     decision.verdict === "modify" ||
     redacted ||

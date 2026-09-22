@@ -25,6 +25,13 @@ MAX_SEARCH_LIMIT = 30
 # AI에게 돌려주는 요약의 글자 상한 — 세션 컨텍스트를 잡아먹지 않기 위해
 SUMMARY_CHARS = 140
 
+# 검색 범위: 본인만 / 본인 + 속한 팀 전부 / 본인 + 특정 팀
+SCOPE_MINE = "mine"
+SCOPE_TEAM = "team"
+TEAM_SCOPE_PREFIX = "team:"
+VISIBILITY_TEAM = "team"
+STATUS_CONFIRMED = "confirmed"
+
 
 class ToolFailure(Exception):
     """도구를 호출한 모델에게 그대로 보여 줄 수 있는 실패 사유"""
@@ -51,11 +58,7 @@ class DecisionTools:
         except ValueError as e:
             raise ToolFailure(f"입력이 올바르지 않습니다 — {e}") from e
         await self.repository.ensure_account(caller.github_id, caller.github_login)
-        # 프로젝트별 기본 범위 (없으면 private). 초안에 붙는 것은 의도일 뿐, 노출은 확정 뒤다.
-        if payload.project:
-            default = await self.repository.project_default(caller.github_id, payload.project)
-            if default is not None:
-                decision = decision.model_copy(update={"visibility": default[0], "team_id": default[1]})
+        decision = await self._apply_scope(caller, payload, decision)
         if payload.supersedes and not await self.repository.owns_all(caller.github_id, payload.supersedes):
             raise ToolFailure("supersedes 에 본인 결정이 아닌 id가 있습니다.")
 
@@ -81,24 +84,85 @@ class DecisionTools:
             "id": decision.id,
             "status": "recorded" if created else "already_recorded",
             "redacted": sum(decision.redactions.values()),
+            "visibility": decision.visibility,
         }
 
+    async def _apply_scope(self, caller: Caller, payload: RecordDecisionInput, decision: StoredDecision) -> StoredDecision:
+        """팀 커넥터로 들어왔으면 팀 범위(주소가 힌트보다 세다), 아니면 프로젝트별 기본값, 없으면 private.
+        범위는 의도일 뿐이고 노출은 확정 뒤다."""
+        if caller.team_slug:
+            team_id = await self._team_id(caller, caller.team_slug)
+            source = {**decision.source, "team": caller.team_slug}
+            return decision.model_copy(update={"visibility": VISIBILITY_TEAM, "team_id": team_id, "source": source})
+        if payload.project:
+            default = await self.repository.project_default(caller.github_id, payload.project)
+            if default is not None:
+                return decision.model_copy(update={"visibility": default[0], "team_id": default[1]})
+        return decision
+
+    async def _team_id(self, caller: Caller, slug: str) -> str:
+        for team_id, team_slug in await self.repository.member_teams(caller.github_id):
+            if team_slug == slug:
+                return team_id
+        raise ToolFailure(f"팀 '{slug}'의 구성원이 아닙니다. 초대를 수락했는지 pithub 웹에서 확인하세요. 기록은 저장되지 않았습니다.")
+
+    async def _teams_in_scope(self, caller: Caller, scope: str) -> dict[str, str]:
+        """scope 가 가리키는 팀들의 {team_id: slug}. mine 이면 빈 dict."""
+        if scope == SCOPE_MINE:
+            return {}
+        teams = dict(await self.repository.member_teams(caller.github_id))
+        if scope == SCOPE_TEAM:
+            return teams
+        if scope.startswith(TEAM_SCOPE_PREFIX):
+            wanted = scope[len(TEAM_SCOPE_PREFIX):]
+            chosen = {team_id: slug for team_id, slug in teams.items() if slug == wanted}
+            if not chosen:
+                raise ToolFailure(f"팀 '{wanted}'의 구성원이 아닙니다.")
+            return chosen
+        raise ToolFailure(f"scope 는 {SCOPE_MINE} · {SCOPE_TEAM} · {TEAM_SCOPE_PREFIX}<slug> 중 하나입니다.")
+
     async def search_my_decisions(
-        self, caller: Caller, query: str, limit: int = DEFAULT_SEARCH_LIMIT, client: str | None = None
-    ) -> list[dict[str, object]]:
+        self, caller: Caller, query: str, limit: int = DEFAULT_SEARCH_LIMIT, client: str | None = None,
+        scope: str | None = None,
+    ) -> list[dict[str, object]]:  # fmt: skip
         bounded = max(1, min(limit, MAX_SEARCH_LIMIT))
+        # 팀 커넥터로 들어온 세션은 묻지 않아도 팀까지 본다
+        scope = scope or (SCOPE_TEAM if caller.team_slug else SCOPE_MINE)
+        teams = await self._teams_in_scope(caller, scope)
         found = await self.repository.search_recorded(caller.github_id, query, bounded)
-        found = _rank(found)
+        if teams:
+            found = _merge(found, await self.repository.search_team(list(teams), query, bounded))
+        found = _rank(found)[:bounded]
+        logins = await self.repository.logins_of(
+            [d.owner_github_id for d in found if d.owner_github_id != caller.github_id]
+        )
         await self.repository.record_search(caller.github_id, query, [d.id for d in found], client)
-        return [_summary(decision) for decision in found]
+        return [_summary(d, by=logins.get(d.owner_github_id), team=teams.get(d.team_id or "")) for d in found]
 
     async def get_decision(self, caller: Caller, decision_id: str) -> dict[str, object]:
-        decision = await self.repository.get(caller.github_id, decision_id)
-        if decision is None:
+        decision = await self.repository.get_by_id(decision_id)
+        if decision is None or not await self._can_read(caller, decision):
             raise ToolFailure("그런 결정이 없습니다.")
         # 전체 내용을 가져갔다 = 실제로 썼다. 검색 순위와 A1 측정의 재료.
-        await self.repository.mark_cited(caller.github_id, decision_id)
-        return _detail(decision)
+        await self.repository.mark_cited(decision.owner_github_id, decision_id)
+        if decision.owner_github_id == caller.github_id:
+            return _detail(decision)
+        teams = dict(await self.repository.member_teams(caller.github_id))
+        logins = await self.repository.logins_of([decision.owner_github_id])
+        return _detail(decision, by=logins.get(decision.owner_github_id), team=teams.get(decision.team_id or ""))
+
+    async def _can_read(self, caller: Caller, decision: StoredDecision) -> bool:
+        """본인 것이거나, 내가 속한 팀에 확정된 팀 범위 결정"""
+        if decision.owner_github_id == caller.github_id:
+            return True
+        if decision.visibility != VISIBILITY_TEAM or decision.status != STATUS_CONFIRMED or not decision.team_id:
+            return False
+        return decision.team_id in dict(await self.repository.member_teams(caller.github_id))
+
+
+def _merge(mine: list[StoredDecision], team: list[StoredDecision]) -> list[StoredDecision]:
+    seen = {d.id for d in mine}
+    return mine + [d for d in team if d.id not in seen]
 
 
 def _rank(found: list[StoredDecision]) -> list[StoredDecision]:
@@ -109,7 +173,7 @@ def _rank(found: list[StoredDecision]) -> list[StoredDecision]:
         return (
             0 if d.id in superseded else 1,
             1 if "principle" in d.tags else 0,
-            1 if d.status == "confirmed" else 0,
+            1 if d.status == STATUS_CONFIRMED else 0,
             d.cited_count + d.repeat_count,
             d.decided_at.isoformat(),
         )
@@ -117,8 +181,8 @@ def _rank(found: list[StoredDecision]) -> list[StoredDecision]:
     return sorted(found, key=key, reverse=True)
 
 
-def _summary(decision: StoredDecision) -> dict[str, object]:
-    return {
+def _summary(decision: StoredDecision, by: str | None = None, team: str | None = None) -> dict[str, object]:
+    summary: dict[str, object] = {
         "id": decision.id,
         "decided_at": decision.decided_at.date().isoformat(),
         "proposal": decision.proposal[:SUMMARY_CHARS],
@@ -126,15 +190,21 @@ def _summary(decision: StoredDecision) -> dict[str, object]:
         "chosen": decision.chosen,
         "human_quote": decision.human_quote[:SUMMARY_CHARS],
         # 사람이 확인한 기록인지 — 모델이 인용할 때 무게를 달리 둘 수 있다
-        "verified": decision.status == "confirmed",
+        "verified": decision.status == STATUS_CONFIRMED,
         "principle": "principle" in decision.tags,
         "superseded_by": None,
     }
+    # 남의 결정에만 붙는다: 누구의 것이고 어느 팀에 낸 것인지
+    if by is not None:
+        summary["by"] = by
+    if team is not None:
+        summary["team"] = team
+    return summary
 
 
-def _detail(decision: StoredDecision) -> dict[str, object]:
+def _detail(decision: StoredDecision, by: str | None = None, team: str | None = None) -> dict[str, object]:
     return {
-        **_summary(decision),
+        **_summary(decision, by=by, team=team),
         "status": decision.status,
         "situation": decision.situation,
         "reject_kind": decision.reject_kind,
