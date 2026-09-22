@@ -6,18 +6,17 @@
 ## 실행 방법
 
 1. 새 터미널에서 `claude` 를 시작한다 (`pithub` 커넥터가 사용자 설정에 등록돼 있으므로 새 세션에는 도구가 있다).
-2. `/mcp` 로 pithub 가 연결·인증돼 있는지 확인한다.
+2. `/mcp` 로 pithub 가 연결·인증돼 있는지 확인한다. (커넥터는 등록한 디렉터리 범위에서만 보인다)
 3. 아래 지시문을 그대로 붙여 넣는다.
 
 ## 지시문
 
 ```
-~/.claude/projects/-Users-changmin/memory/ 의 메모를 읽고, 그 안의 결정을 pithub의 record_decision 으로 기록해 줘.
+~/.claude/projects/<프로젝트>/memory/ 의 메모를 읽고, 그 안의 결정을 pithub의 record_decision 으로 기록해 줘.
 
 읽을 파일: project_*.md, feedback_*.md, reference_*.md. MEMORY.md(색인)와 disk_cleanup_state.md 는 빼.
-건너뛸 파일 (고객 데이터가 섞여 있음): project_lges_inspector.md, project_lges_tr_tool.md,
-project_dental_lesion_detection.md, project_ksh_cq.md, project_ccw_anomaly.md, project_sesac_textbook.md,
-project_hyukhyun_ieee.md.
+건너뛸 파일 (고객·환자·개인 데이터가 섞인 메모): 파일명을 여기에 나열한다. 서버는 시크릿 패턴만 가리고
+고객 이름은 모르므로, 그런 메모는 아예 넣지 않는다.
 
 결정 하나의 기준: "제안이 있었고 내가 승인·수정·거부했다" 또는 "선택지 중 하나를 골랐다"로 읽히는 문장.
 사실 서술("X가 Y였다")은 결정이 아니다. 단, "결론: ~이 최선", "폐기", "기각", "확정", "금지", "~로 전환"은 결정이다.
