@@ -54,3 +54,6 @@ node_modules/
 # Supabase
 .supabase/
 pithub/supabase/.temp/
+
+# 파이썬 빌드 규칙(lib/)이 웹 소스를 삼키지 않게
+!pithub/web/src/lib/
