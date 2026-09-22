@@ -24,14 +24,22 @@ export interface TeamMember {
   github_id: number;
   role: "owner" | "member";
   accepted_at: string | null;
+  /** 본인과 같으면 가입 요청(소유자가 승인), 다르면 초대(본인이 수락) */
+  invited_by: number | null;
   github_login: string;
   avatar_url: string | null;
 }
 
-/** 초대장: 팀 + 보낸 사람 */
+/** 초대장 또는 내가 보낸 가입 요청 */
 export interface TeamInvite {
   team: Team;
   invited_by_login: string | null;
+  /** 팀 주소로 기록하다 생긴 가입 요청 — 소유자 승인 대기 */
+  requested_by_me: boolean;
+}
+
+export function isJoinRequest(member: Pick<TeamMember, "github_id" | "accepted_at" | "invited_by">): boolean {
+  return !member.accepted_at && member.invited_by === member.github_id;
 }
 
 /** team_decisions 뷰의 행 */
@@ -82,7 +90,9 @@ export async function listMyInvites(supabase: SupabaseClient, githubId: number):
   const loginOf = new Map((inviters ?? []).map((a) => [a.github_id as number, a.github_login as string]));
   return rows.flatMap((r) => {
     const team = one(r.teams);
-    return team ? [{ team, invited_by_login: r.invited_by ? (loginOf.get(r.invited_by) ?? null) : null }] : [];
+    if (!team) return [];
+    const requested = r.invited_by === githubId;
+    return [{ team, invited_by_login: requested || !r.invited_by ? null : (loginOf.get(r.invited_by) ?? null), requested_by_me: requested }];
   });
 }
 
@@ -97,7 +107,7 @@ export async function listTeamMembers(supabase: SupabaseClient, teamId: string):
   const { data, error } = await supabase
     .from("team_members")
     // accounts 로 가는 외래키가 둘(github_id · invited_by)이라 어느 것인지 명시한다
-    .select("team_id, github_id, role, accepted_at, accounts!team_members_github_id_fkey(github_login, avatar_url)")
+    .select("team_id, github_id, role, accepted_at, invited_by, accounts!team_members_github_id_fkey(github_login, avatar_url)")
     .eq("team_id", teamId)
     .order("joined_at", { ascending: true });
   if (error) fail("listTeamMembers", error);
@@ -109,6 +119,7 @@ export async function listTeamMembers(supabase: SupabaseClient, teamId: string):
       github_id: row.github_id as number,
       role: row.role as TeamMember["role"],
       accepted_at: row.accepted_at as string | null,
+      invited_by: row.invited_by as number | null,
       github_login: account?.github_login ?? `#${row.github_id}`,
       avatar_url: account?.avatar_url ?? null,
     };

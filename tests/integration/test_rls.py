@@ -525,3 +525,70 @@ def test_team_survives_its_creator_deleting_their_account(db):
     with acting_as(db, "authenticated", bob):
         # 계정과 함께 결정도 사라진다 — 팀에 남는 것은 팀이지 그 사람의 결정이 아니다
         assert ids(db, "select id from public.team_decisions") == []
+
+
+# --- 가입 요청: 팀 주소로 온 비구성원은 승인 대기열에 (D-0008 보완) -----------------
+
+
+def _request_join(conn, team: str, github_id: int) -> None:  # noqa: ANN001
+    """MCP 서버(service_role)가 팀 주소로 인증한 비구성원을 대기열에 넣는 경로"""
+    conn.execute(
+        "insert into public.accounts (github_id, github_login) values (%s, %s) on conflict do nothing",
+        (github_id, f"user{github_id}"),
+    )
+    conn.execute(
+        "insert into public.team_members (team_id, github_id, invited_by) values (%s, %s, %s) on conflict do nothing",
+        (team, github_id, github_id),
+    )
+
+
+def _record_pending(conn, github_id: int, decision_id: str, slug: str) -> None:  # noqa: ANN001
+    record_via_mcp(conn, github_id, f"user{github_id}", decision_id)
+    conn.execute(
+        "update public.decisions set source = %s where id = %s",
+        (psycopg.types.json.Jsonb({"client": "claude-code", "team": slug, "team_status": "pending"}), decision_id),
+    )
+
+
+def test_join_request_cannot_be_approved_by_the_requester_but_owner_can(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _request_join(db, team, BOB_GITHUB_ID)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+
+    with acting_as(db, "authenticated", bob):
+        assert db.execute("update public.team_members set accepted_at = now()").rowcount == 0
+    with acting_as(db, "authenticated", alice):
+        assert db.execute("update public.team_members set accepted_at = now() where github_id = %s", (BOB_GITHUB_ID,)).rowcount == 1
+
+
+def test_owner_cannot_accept_an_invitation_on_behalf_of_the_invitee(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    db.execute("insert into public.accounts (github_id, github_login) values (%s, 'bob')", (BOB_GITHUB_ID,))
+    db.execute(
+        "insert into public.team_members (team_id, github_id, invited_by) values (%s, %s, %s)", (team, BOB_GITHUB_ID, ALICE_GITHUB_ID)
+    )
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with acting_as(db, "authenticated", alice):
+        assert db.execute("update public.team_members set accepted_at = now() where github_id = %s", (BOB_GITHUB_ID,)).rowcount == 0
+
+
+def test_approval_moves_pending_team_address_records_to_team_scope(db):
+    """승인 전에 팀 주소로 기록한 결정은 private 이었다가 승인 순간 팀 범위가 된다 — 다른 private 은 그대로"""
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _request_join(db, team, BOB_GITHUB_ID)
+    _record_pending(db, BOB_GITHUB_ID, "PD-pending", "pilab")
+    _record_pending(db, BOB_GITHUB_ID, "PD-other-team", "others")
+    record_via_mcp(db, BOB_GITHUB_ID, "bob", "PD-plain-private")
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with acting_as(db, "authenticated", alice):
+        db.execute("update public.team_members set accepted_at = now() where github_id = %s", (BOB_GITHUB_ID,))
+
+    rows = db.execute("select id, visibility, team_id::text, source ->> 'team_status' from public.decisions order by id").fetchall()
+    assert rows == [
+        ("PD-other-team", "private", None, "pending"),
+        ("PD-pending", "team", team, None),
+        ("PD-plain-private", "private", None, None),
+    ]

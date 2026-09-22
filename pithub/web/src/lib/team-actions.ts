@@ -75,6 +75,22 @@ export async function leaveTeam(form: FormData): Promise<void> {
   redirect("/teams");
 }
 
+/** 가입 요청 승인 — 소유자만. 승인 순간 그 사람이 팀 주소로 기록해 둔 결정이 팀 범위로 옮겨진다(DB 트리거). */
+export async function approveMember(form: FormData): Promise<void> {
+  const teamId = text(form, "team_id");
+  const slug = text(form, "slug");
+  const githubId = Number(form.get("github_id"));
+  const supabase = await createServerSupabaseClient();
+
+  const { error } = await supabase
+    .from("team_members")
+    .update({ accepted_at: new Date().toISOString() })
+    .eq("team_id", teamId)
+    .eq("github_id", githubId);
+  if (error) throw new Error(`승인 실패: ${error.message}`);
+  revalidatePath(`/t/${slug}`);
+}
+
 export async function removeMember(form: FormData): Promise<void> {
   const teamId = text(form, "team_id");
   const slug = text(form, "slug");

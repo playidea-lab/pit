@@ -5,8 +5,16 @@ import DecisionCard from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import { getMyAccount } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
-import { inviteMember, leaveTeam, removeMember } from "@/lib/team-actions";
-import { getTeamBySlug, listTeamDecisions, listTeamMembers, teamMcpUrl, type Team, type TeamMember } from "@/lib/teams";
+import { approveMember, inviteMember, leaveTeam, removeMember } from "@/lib/team-actions";
+import {
+  getTeamBySlug,
+  isJoinRequest,
+  listTeamDecisions,
+  listTeamMembers,
+  teamMcpUrl,
+  type Team,
+  type TeamMember,
+} from "@/lib/teams";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +48,8 @@ function ConnectorCard({ team, url }: { team: Team; url: string }) {
       </p>
       <Code>{`[mcp_servers.pithub-${team.slug}]\nurl = "${url}"`}</Code>
       <p className="faint mt-3 text-xs">
-        구성원이 아닌 사람이 이 주소로 기록하면 서버가 거부합니다. 저장소 밖(claude.ai)에서는 개인 커넥터를 쓰고
+        아직 구성원이 아닌 사람이 이 주소로 오면 자동으로 가입 요청이 되고, 소유자가 아래 구성원 칸에서 승인합니다.
+        승인 전 기록은 본인만 보다가 승인 순간 팀 범위로 옮겨집니다. 저장소 밖(claude.ai)에서는 개인 커넥터를 쓰고
         프로젝트별 기본 범위로 팀을 고릅니다.
       </p>
     </div>
@@ -49,11 +58,20 @@ function ConnectorCard({ team, url }: { team: Team; url: string }) {
 
 function MemberRow({ member, team, isOwner, myId }: { member: TeamMember; team: Team; isOwner: boolean; myId: number }) {
   const pending = !member.accepted_at;
+  const requested = isJoinRequest(member);
   return (
     <li className="flex items-center gap-3 py-2 text-sm">
       <span className={pending ? "muted" : "text-ink"}>{member.github_login}</span>
       {member.role === "owner" && <span className="faint text-xs">소유자</span>}
-      {pending && <span className="badge badge-modify">초대 중</span>}
+      {pending && <span className="badge badge-modify">{requested ? "가입 요청" : "초대 중"}</span>}
+      {isOwner && requested && (
+        <form action={approveMember} className="ml-auto">
+          <input type="hidden" name="team_id" value={team.id} />
+          <input type="hidden" name="slug" value={team.slug} />
+          <input type="hidden" name="github_id" value={member.github_id} />
+          <button className="btn btn-primary h-7 px-3 text-xs">승인</button>
+        </form>
+      )}
       {member.github_id === myId && member.role !== "owner" && (
         <form action={leaveTeam} className="ml-auto">
           <input type="hidden" name="team_id" value={team.id} />
@@ -61,11 +79,11 @@ function MemberRow({ member, team, isOwner, myId }: { member: TeamMember; team: 
         </form>
       )}
       {isOwner && member.github_id !== myId && (
-        <form action={removeMember} className="ml-auto">
+        <form action={removeMember} className={requested ? "" : "ml-auto"}>
           <input type="hidden" name="team_id" value={team.id} />
           <input type="hidden" name="slug" value={team.slug} />
           <input type="hidden" name="github_id" value={member.github_id} />
-          <button className="btn btn-ghost h-7 px-2 text-xs">{pending ? "초대 취소" : "내보내기"}</button>
+          <button className="btn btn-ghost h-7 px-2 text-xs">{requested ? "거절" : pending ? "초대 취소" : "내보내기"}</button>
         </form>
       )}
     </li>
@@ -153,8 +171,9 @@ export default async function TeamPage({ params }: PageProps) {
             </form>
           )}
           <p className="faint mt-3 text-xs">
-            초대받은 사람이 pithub에 GitHub로 로그인한 적이 있어야 합니다. 팀을 나가도 팀 범위로 확인한 결정은 팀에
-            남습니다. 비공개 결정은 애초에 팀이 본 적이 없습니다.
+            보통은 초대할 필요가 없습니다 — 팀 저장소에서 팀 주소로 처음 기록하는 사람이 여기 가입 요청으로 나타납니다.
+            아이디로 초대하려면 그 사람이 pithub에 GitHub로 로그인한 적이 있어야 합니다. 팀을 나가도 팀 범위로 확인한
+            결정은 팀에 남습니다. 비공개 결정은 애초에 팀이 본 적이 없습니다.
           </p>
         </div>
       </section>

@@ -54,6 +54,10 @@ class InMemoryRepository:
         self.project_defaults: dict[tuple[int, str], tuple[str, str | None]] = {}
         # github_id → [(team_id, slug)] — 수락까지 끝난 팀만
         self.memberships: dict[int, list[tuple[str, str]]] = {}
+        # slug → team_id (존재하는 팀)
+        self.teams: dict[str, str] = {}
+        # (team_id, github_id) — 승인 대기 중인 가입 요청
+        self.join_requests: set[tuple[str, int]] = set()
         self.fail_with: Exception | None = None
 
     def _maybe_fail(self) -> None:
@@ -163,3 +167,9 @@ class InMemoryRepository:
 
     async def logins_of(self, github_ids: list[int]) -> dict[int, str]:
         return {github_id: self.accounts.get(github_id, f"user{github_id}") for github_id in github_ids}
+
+    async def find_team(self, slug: str) -> str | None:
+        return self.teams.get(slug)
+
+    async def request_join(self, team_id: str, github_id: int) -> None:
+        self.join_requests.add((team_id, github_id))

@@ -135,10 +135,14 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         return tools
 
     @server.tool
-    def whoami() -> dict[str, str | int]:
-        """Show which pithub account this connection is signed in as."""
+    async def whoami() -> dict[str, str | int | None]:
+        """Show which pithub account this connection is signed in as, and its team status if connected through a team address."""
         caller = _caller()
-        return {"github_id": caller.github_id, "github_login": caller.github_login}
+        result: dict[str, str | int | None] = {"github_id": caller.github_id, "github_login": caller.github_login}
+        if caller.team_slug and tools is not None:
+            _, status = await _run(tools.team_status(caller, caller.team_slug))
+            result.update({"team": caller.team_slug, "team_status": status})
+        return result
 
     @server.tool
     async def record_decision(

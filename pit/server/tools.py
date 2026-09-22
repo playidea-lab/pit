@@ -31,6 +31,9 @@ SCOPE_TEAM = "team"
 TEAM_SCOPE_PREFIX = "team:"
 VISIBILITY_TEAM = "team"
 STATUS_CONFIRMED = "confirmed"
+# 팀 주소로 왔지만 아직 구성원이 아닌 사람의 기록: private 로 두고 승인 순간 DB 트리거가 팀 범위로 옮긴다
+TEAM_STATUS_PENDING = "pending"
+TEAM_STATUS_MEMBER = "member"
 
 
 class ToolFailure(Exception):
@@ -80,31 +83,46 @@ class DecisionTools:
             "결정 기록",
             extra={"decision_id": decision.id, "stored": created, "redacted": sum(decision.redactions.values())},
         )
-        return {
+        result: dict[str, object] = {
             "id": decision.id,
             "status": "recorded" if created else "already_recorded",
             "redacted": sum(decision.redactions.values()),
             "visibility": decision.visibility,
         }
+        if decision.source.get("team_status") == TEAM_STATUS_PENDING:
+            result["note"] = (
+                f"팀 '{caller.team_slug}' 가입 요청을 보냈습니다. 소유자가 승인하면 이 기록은 팀 범위로 옮겨집니다. "
+                "그때까지는 본인만 봅니다."
+            )
+        return result
 
     async def _apply_scope(self, caller: Caller, payload: RecordDecisionInput, decision: StoredDecision) -> StoredDecision:
         """팀 커넥터로 들어왔으면 팀 범위(주소가 힌트보다 세다), 아니면 프로젝트별 기본값, 없으면 private.
         범위는 의도일 뿐이고 노출은 확정 뒤다."""
         if caller.team_slug:
-            team_id = await self._team_id(caller, caller.team_slug)
+            team_id, status = await self.team_status(caller, caller.team_slug)
             source = {**decision.source, "team": caller.team_slug}
-            return decision.model_copy(update={"visibility": VISIBILITY_TEAM, "team_id": team_id, "source": source})
+            if status == TEAM_STATUS_MEMBER:
+                return decision.model_copy(update={"visibility": VISIBILITY_TEAM, "team_id": team_id, "source": source})
+            # 구성원이 아니면 거부하지 않고 대기열에 넣는다 — 저장소 접근이 이미 신뢰다. 첫 기록도 버리지 않는다.
+            return decision.model_copy(update={"source": {**source, "team_status": TEAM_STATUS_PENDING}})
         if payload.project:
             default = await self.repository.project_default(caller.github_id, payload.project)
             if default is not None:
                 return decision.model_copy(update={"visibility": default[0], "team_id": default[1]})
         return decision
 
-    async def _team_id(self, caller: Caller, slug: str) -> str:
+    async def team_status(self, caller: Caller, slug: str) -> tuple[str | None, str]:
+        """(team_id, member | pending). 팀이 있고 구성원이 아니면 가입 요청을 남긴다."""
         for team_id, team_slug in await self.repository.member_teams(caller.github_id):
             if team_slug == slug:
-                return team_id
-        raise ToolFailure(f"팀 '{slug}'의 구성원이 아닙니다. 초대를 수락했는지 pithub 웹에서 확인하세요. 기록은 저장되지 않았습니다.")
+                return team_id, TEAM_STATUS_MEMBER
+        team_id = await self.repository.find_team(slug)
+        if team_id is None:
+            raise ToolFailure(f"팀 '{slug}'이 없습니다. 주소를 확인하세요. 기록은 저장되지 않았습니다.")
+        await self.repository.ensure_account(caller.github_id, caller.github_login)
+        await self.repository.request_join(team_id, caller.github_id)
+        return team_id, TEAM_STATUS_PENDING
 
     async def _teams_in_scope(self, caller: Caller, scope: str) -> dict[str, str]:
         """scope 가 가리키는 팀들의 {team_id: slug}. mine 이면 빈 dict."""

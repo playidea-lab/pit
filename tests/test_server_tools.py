@@ -422,6 +422,7 @@ BOB_IN_PILAB = Caller(github_id=2002, github_login="bob", team_slug="pilab")
 
 def _team_repository() -> InMemoryRepository:
     repository = InMemoryRepository()
+    repository.teams = {"pilab": TEAM_ID}
     repository.memberships = {1001: [(TEAM_ID, "pilab")], 2002: [(TEAM_ID, "pilab")]}
     return repository
 
@@ -438,15 +439,37 @@ def test_record_decision_through_team_address_is_team_scoped_draft():
     assert (stored.visibility, stored.team_id, stored.status, stored.source["team"]) == ("team", TEAM_ID, "draft", "pilab")
 
 
-def test_record_decision_through_team_address_by_non_member_is_refused_and_stores_nothing():
+def test_record_decision_through_team_address_by_non_member_queues_a_join_request_and_keeps_it_private():
+    """거부하지 않는다: 가입 요청을 남기고, 기록은 승인 때까지 본인만 보는 private 로 둔다"""
     repository = _team_repository()
     tools = _tools(repository)
     stranger = Caller(github_id=3003, github_login="carol", team_slug="pilab")
 
-    with pytest.raises(ToolFailure, match="구성원이 아닙니다"):
-        _run(tools.record_decision(stranger, _arguments()))
+    result = _run(tools.record_decision(stranger, _arguments()))
+    _run(tools.record_decision(stranger, _arguments(proposal="두 번째")))
 
-    assert repository.rows == []
+    stored = repository.rows[0]
+    assert (stored.visibility, stored.team_id, stored.source["team"], stored.source["team_status"]) == ("private", None, "pilab", "pending")
+    assert result["visibility"] == "private" and "가입 요청" in str(result["note"])
+    assert repository.join_requests == {(TEAM_ID, 3003)}
+    assert repository.accounts[3003] == "carol"
+
+
+def test_record_decision_through_unknown_team_address_is_refused_and_stores_nothing():
+    repository = _team_repository()
+    tools = _tools(repository)
+
+    with pytest.raises(ToolFailure, match="팀 'ghost'이 없습니다"):
+        _run(tools.record_decision(Caller(github_id=1001, github_login="alice", team_slug="ghost"), _arguments()))
+
+    assert repository.rows == [] and repository.join_requests == set()
+
+
+def test_member_record_through_team_address_carries_no_pending_note():
+    repository = _team_repository()
+    result = _run(_tools(repository).record_decision(ALICE_IN_PILAB, _arguments()))
+
+    assert "note" not in result and "team_status" not in repository.rows[0].source
 
 
 def test_team_address_beats_project_default():

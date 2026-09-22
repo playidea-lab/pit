@@ -77,6 +77,14 @@ class DecisionRepository(Protocol):
 
     async def logins_of(self, github_ids: list[int]) -> dict[int, str]: ...
 
+    async def find_team(self, slug: str) -> str | None:
+        """slug 의 팀 id. 없으면 None."""
+        ...
+
+    async def request_join(self, team_id: str, github_id: int) -> None:
+        """가입 요청 행(본인이 보낸 초대)을 만든다. 이미 있으면 그대로."""
+        ...
+
     # --- 로컬 pit 용 (TokenRepository) ---
 
     async def find_token_owner(self, token_hash: str) -> Caller | None: ...
@@ -266,6 +274,17 @@ class SupabaseRepository:
         params = {"github_id": f"in.({ids})", "select": "github_id,github_login"}
         rows = (await self._request("GET", "/accounts", params=params)).json()
         return {int(row["github_id"]): str(row["github_login"]) for row in rows}
+
+    async def find_team(self, slug: str) -> str | None:
+        rows = (await self._request("GET", "/teams", params={"slug": f"eq.{slug}", "select": "id", "limit": "1"})).json()
+        return str(rows[0]["id"]) if rows else None
+
+    async def request_join(self, team_id: str, github_id: int) -> None:
+        await self._request(
+            "POST", "/team_members", params={"on_conflict": "team_id,github_id"},
+            headers={"Prefer": "resolution=ignore-duplicates,return=minimal"},
+            json={"team_id": team_id, "github_id": github_id, "role": "member", "invited_by": github_id},
+        )  # fmt: skip
 
     async def mark_cited(self, owner_github_id: int, decision_id: str) -> None:
         params = {"id": f"eq.{decision_id}", "owner_github_id": f"eq.{owner_github_id}", "select": "cited_count"}
