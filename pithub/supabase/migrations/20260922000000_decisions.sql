@@ -106,7 +106,7 @@ create table public.decisions (
     -- 판정형 결정에는 판정이, 선택형 결정에는 고른 답이 있어야 한다
     check ((kind = 'verdict' and verdict is not null) or (kind = 'choice' and chosen is not null)),
     -- 확정되지 않은 결정은 공개할 수 없다
-    check (visibility = 'private' or status = 'confirmed')
+    constraint decisions_unconfirmed_private_check check (visibility = 'private' or status = 'confirmed')
 );
 
 create index decisions_owner_status_idx on public.decisions (owner_github_id, status, decided_at desc);

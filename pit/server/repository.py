@@ -38,6 +38,10 @@ class DecisionRepository(Protocol):
 
     async def get(self, owner_github_id: int, decision_id: str) -> StoredDecision | None: ...
 
+    async def project_default(self, owner_github_id: int, project: str) -> tuple[str, str | None] | None:
+        """프로젝트별 기본 공개 범위 (visibility, team_id). 없으면 None → private."""
+        ...
+
     # --- 로컬 pit 용 (TokenRepository) ---
 
     async def find_token_owner(self, token_hash: str) -> Caller | None: ...
@@ -146,3 +150,10 @@ class SupabaseRepository:
             params["decided_at"] = f"gte.{since.isoformat()}"
         response = await self._request("GET", "/decisions", params=params)
         return [StoredDecision.model_validate(row) for row in response.json()]
+
+    async def project_default(self, owner_github_id: int, project: str) -> tuple[str, str | None] | None:
+        params = {"github_id": f"eq.{owner_github_id}", "project": f"eq.{project}", "select": "visibility,team_id", "limit": "1"}
+        rows = (await self._request("GET", "/project_defaults", params=params)).json()
+        if not rows:
+            return None
+        return str(rows[0]["visibility"]), rows[0].get("team_id")

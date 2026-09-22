@@ -68,6 +68,20 @@ def test_record_decision_stores_private_draft_for_the_caller():
     assert repository.accounts == {1001: "alice"}
 
 
+def test_record_decision_project_default_sets_scope_else_private():
+    repository = InMemoryRepository()
+    repository.project_defaults[(1001, "pit")] = ("team", "team-uuid")
+    tools = _tools(repository)
+
+    _run(tools.record_decision(ALICE, _arguments(project="pit")))
+    _run(tools.record_decision(ALICE, _arguments(project="other", human_quote="다른 프로젝트")))
+    _run(tools.record_decision(ALICE, _arguments(human_quote="프로젝트 없음")))
+
+    scopes = [(row.visibility, row.team_id) for row in repository.rows]
+    assert scopes == [("team", "team-uuid"), ("private", None), ("private", None)]
+    assert all(row.status == "draft" for row in repository.rows)
+
+
 def test_record_decision_secret_in_quote_is_masked_before_storage():
     repository = InMemoryRepository()
     fake_key = "sk-ant-" + "a1B2" * 6

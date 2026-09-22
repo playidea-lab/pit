@@ -50,6 +50,8 @@ class InMemoryRepository:
         self.rows: list = []
         # token_hash → (github_id, login)
         self.tokens: dict[str, tuple[int, str]] = {}
+        # (github_id, project) → (visibility, team_id)
+        self.project_defaults: dict[tuple[int, str], tuple[str, str | None]] = {}
         self.fail_with: Exception | None = None
 
     def _maybe_fail(self) -> None:
@@ -107,3 +109,7 @@ class InMemoryRepository:
         self._maybe_fail()
         rows = [r for r in self.rows if r.owner_github_id == owner_github_id and (since is None or r.decided_at >= since)]
         return sorted(rows, key=lambda r: r.decided_at)[:limit]
+
+    async def project_default(self, owner_github_id: int, project: str):  # noqa: ANN201
+        self._maybe_fail()
+        return self.project_defaults.get((owner_github_id, project))

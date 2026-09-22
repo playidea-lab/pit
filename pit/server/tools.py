@@ -40,6 +40,11 @@ class DecisionTools:
 
         decision = to_stored(payload, caller.github_id, self.now())
         await self.repository.ensure_account(caller.github_id, caller.github_login)
+        # 프로젝트별 기본 범위 (없으면 private). 초안에 붙는 것은 의도일 뿐, 노출은 확정 뒤다.
+        if payload.project:
+            default = await self.repository.project_default(caller.github_id, payload.project)
+            if default is not None:
+                decision = decision.model_copy(update={"visibility": default[0], "team_id": default[1]})
         created = await self.repository.insert_draft(decision)
 
         # 글의 내용은 로그에 남기지 않는다

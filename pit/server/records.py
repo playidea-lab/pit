@@ -54,6 +54,7 @@ class StoredDecision(BaseModel):
     owner_github_id: int
     status: str = "draft"
     visibility: str = "private"
+    team_id: str | None = None
     origin: str = ORIGIN_MCP
     kind: str
     verdict: str | None = None
@@ -66,6 +67,7 @@ class StoredDecision(BaseModel):
     human_quote: str
     tags: list[str] = Field(default_factory=list)
     supersedes: list[str] = Field(default_factory=list)
+    consulted: list[dict[str, str | int]] = Field(default_factory=list)
     decided_at: datetime
     source: dict[str, str] = Field(default_factory=dict)
     redactions: dict[str, int] = Field(default_factory=dict)
