@@ -113,3 +113,29 @@ class InMemoryRepository:
     async def project_default(self, owner_github_id: int, project: str):  # noqa: ANN201
         self._maybe_fail()
         return self.project_defaults.get((owner_github_id, project))
+
+    async def find_recent_same_proposal(self, owner_github_id: int, project, proposal_normalized: str, since):  # noqa: ANN001, ANN201
+        self._maybe_fail()
+        for row in sorted(self.rows, key=lambda r: r.decided_at, reverse=True):
+            same_project = row.source.get("project") == project
+            if (row.owner_github_id == owner_github_id and same_project and row.status != "discarded"
+                    and row.decided_at >= since and " ".join(row.proposal.split()).lower() == proposal_normalized):
+                return row
+        return None
+
+    async def bump_repeat(self, decision_id: str) -> None:
+        self.rows = [r.model_copy(update={"repeat_count": r.repeat_count + 1}) if r.id == decision_id else r for r in self.rows]
+
+    async def owns_all(self, owner_github_id: int, decision_ids: list[str]) -> bool:
+        mine = {r.id for r in self.rows if r.owner_github_id == owner_github_id}
+        return set(decision_ids) <= mine
+
+    async def record_search(self, owner_github_id: int, query: str, returned_ids: list[str], client) -> None:  # noqa: ANN001
+        self.searches = getattr(self, "searches", []) + [(owner_github_id, query, returned_ids)]
+
+    async def mark_cited(self, owner_github_id: int, decision_id: str) -> None:
+        self.rows = [
+            r.model_copy(update={"cited_count": r.cited_count + 1})
+            if r.id == decision_id and r.owner_github_id == owner_github_id else r
+            for r in self.rows
+        ]

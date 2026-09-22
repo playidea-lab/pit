@@ -401,3 +401,18 @@ def test_project_default_cannot_point_at_a_team_one_is_not_in(db):
             "insert into public.project_defaults (github_id, project, visibility, team_id) values (%s, 'pit', 'team', %s)",
             (ALICE_GITHUB_ID, team),
         )
+
+
+def test_citations_readable_by_owner_only_and_trgm_index_exists(db):
+    db.execute("insert into public.accounts (github_id, github_login) values (%s, 'alice'), (%s, 'bob')", (ALICE_GITHUB_ID, BOB_GITHUB_ID))
+    db.execute(
+        "insert into public.citations (owner_github_id, query, returned_ids) values (%s, '캐시', '{PD-1}')", (ALICE_GITHUB_ID,)
+    )
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+
+    with acting_as(db, "authenticated", alice):
+        assert db.execute("select count(*) from public.citations").fetchone()[0] == 1
+    with acting_as(db, "authenticated", bob):
+        assert db.execute("select count(*) from public.citations").fetchone()[0] == 0
+    assert db.execute("select count(*) from pg_indexes where indexname = 'decisions_proposal_trgm'").fetchone()[0] == 1

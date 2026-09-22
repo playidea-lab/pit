@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { VerdictBadge, formatDate } from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import VerifyBar from "@/components/VerifyBar";
-import { getMyAccount, listUnverified, needsAttention, weeklySample, type Decision } from "@/lib/decisions";
+import { getMyAccount, leaksVerdict, listUnverified, needsAttention, weeklySample, type Decision } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,9 @@ function Item({ decision }: { decision: Decision }) {
         <span className="faint">{formatDate(decision.decided_at)}</span>
         {decision.source.project && <span className="faint">{decision.source.project}</span>}
         {redacted > 0 && <span className="badge badge-modify">가림 {redacted}곳</span>}
+        {decision.tags.includes("principle") && <span className="badge badge-choice">원칙</span>}
+        {decision.supersedes.length > 0 && <span className="badge badge-choice">이전 결정을 뒤집음</span>}
+        {leaksVerdict(decision) && <span className="badge badge-modify">설명에 판정이 섞임</span>}
         <Link href={`/d/${decision.id}`} className="faint ml-auto hover:text-ink">
           자세히
         </Link>
@@ -85,7 +88,7 @@ export default async function TriagePage() {
               <div>
                 <div className="mb-3 flex items-baseline gap-3">
                   <h2 className="text-[15px] font-semibold text-ink">봐 둘 만한 것</h2>
-                  <span className="faint text-xs">거부·수정 판정, 가림이 일어난 기록 · {flagged.length}건</span>
+                  <span className="faint text-xs">거부·수정, 원칙, 뒤집은 결정, 가림, 설명에 판정이 섞인 기록 · {flagged.length}건</span>
                 </div>
                 <div className="space-y-3">
                   {flagged.map((d) => (

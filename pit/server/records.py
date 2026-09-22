@@ -17,6 +17,9 @@ from pit.transcripts.redact import RedactionRules, redact
 MAX_TEXT_CHARS = 4000
 MAX_OPTIONS = 12
 MAX_TAGS = 8
+MAX_SUPERSEDES = 5
+# 이 기간 안에 같은 프로젝트에 같은 제안이 다시 오면 새 행 대신 반복 횟수를 올린다
+REPEAT_WINDOW_DAYS = 7
 MAX_TAG_CHARS = 40
 DEDUPE_KEY_CHARS = 32
 ORIGIN_MCP = "mcp"
@@ -42,6 +45,8 @@ class RecordDecisionInput(BaseModel):
     project: str | None = Field(default=None, max_length=200)
     client: str | None = Field(default=None, max_length=80)
     tags: list[str] = Field(default_factory=list, max_length=MAX_TAGS)
+    # 이 결정이 뒤집는 과거 결정의 id (record 전에 search_my_decisions 로 찾은 것)
+    supersedes: list[str] = Field(default_factory=list, max_length=MAX_SUPERSEDES)
     # 과거 결정을 옮길 때만 준다 (메모·문서 백필). 없으면 서버 시각.
     decided_at: datetime | None = None
 
@@ -80,13 +85,19 @@ class StoredDecision(BaseModel):
     supersedes: list[str] = Field(default_factory=list)
     consulted: list[dict[str, str | int]] = Field(default_factory=list)
     decided_at: datetime
+    cited_count: int = 0
+    repeat_count: int = 1
     source: dict[str, str] = Field(default_factory=dict)
     redactions: dict[str, int] = Field(default_factory=dict)
     dedupe_key: str
 
 
-def _normalize(text: str) -> str:
+def normalize_text(text: str) -> str:
+    """공백·대소문자를 무시한 비교용 형태"""
     return " ".join(text.split()).lower()
+
+
+_normalize = normalize_text
 
 
 def make_dedupe_key(proposal: str, human_quote: str, decided_at: datetime) -> str:
@@ -134,6 +145,7 @@ def to_stored(payload: RecordDecisionInput, owner_github_id: int, now: datetime)
         rationale=clean(payload.rationale),
         human_quote=clean(payload.human_quote),
         tags=[clean(tag)[:MAX_TAG_CHARS] for tag in payload.tags if tag.strip()],
+        supersedes=list(dict.fromkeys(payload.supersedes)),
         decided_at=decided_at,
         source={key: clean(value) for key, value in source.items()},
         redactions=dict(counts),

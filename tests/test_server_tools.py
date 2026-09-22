@@ -75,8 +75,8 @@ def test_record_decision_project_default_sets_scope_else_private():
     tools = _tools(repository)
 
     _run(tools.record_decision(ALICE, _arguments(project="pit")))
-    _run(tools.record_decision(ALICE, _arguments(project="other", human_quote="다른 프로젝트")))
-    _run(tools.record_decision(ALICE, _arguments(human_quote="프로젝트 없음")))
+    _run(tools.record_decision(ALICE, _arguments(project="other", proposal="다른 프로젝트의 제안", human_quote="다른 프로젝트")))
+    _run(tools.record_decision(ALICE, _arguments(proposal="프로젝트 없는 제안", human_quote="프로젝트 없음")))
 
     scopes = [(row.visibility, row.team_id) for row in repository.rows]
     assert scopes == [("team", "team-uuid"), ("private", None), ("private", None)]
@@ -178,7 +178,7 @@ def test_record_decision_over_rate_limit_is_rejected():
     repository = InMemoryRepository()
     tools = _tools(repository, max_calls=2)
     for n in range(2):
-        _run(tools.record_decision(ALICE, _arguments(human_quote=f"거부 {n}")))
+        _run(tools.record_decision(ALICE, _arguments(proposal=f"제안 {n}", human_quote=f"거부 {n}")))
 
     with pytest.raises(ToolFailure, match="너무 잦습니다"):
         _run(tools.record_decision(ALICE, _arguments(human_quote="거부 3")))
@@ -212,10 +212,10 @@ def test_search_my_decisions_includes_unverified_but_not_discarded():
     """기록은 곧바로 검색된다. 버린 것만 빠지고, 확인 여부는 결과에 표시된다."""
     repository = InMemoryRepository()
     tools = _tools(repository)
-    _run(tools.record_decision(ALICE, _arguments(human_quote="미확인 캐시")))
-    _run(tools.record_decision(ALICE, _arguments(human_quote="버린 캐시")))
+    _run(tools.record_decision(ALICE, _arguments(proposal="캐시 1", human_quote="미확인 캐시")))
+    _run(tools.record_decision(ALICE, _arguments(proposal="캐시 2", human_quote="버린 캐시")))
     repository.rows[-1] = repository.rows[-1].model_copy(update={"status": "discarded"})
-    _run(tools.record_decision(ALICE, _arguments(human_quote="확인한 캐시")))
+    _run(tools.record_decision(ALICE, _arguments(proposal="캐시 3", human_quote="확인한 캐시")))
     _confirm(repository)
 
     found = _run(tools.search_my_decisions(ALICE, "캐시"))
@@ -337,3 +337,77 @@ def test_load_settings_disk_storage_without_encryption_key_raises(monkeypatch, t
 
     with pytest.raises(SettingsError, match="PITHUB_OAUTH_STORAGE_KEY"):
         load_settings()
+
+
+# --- 생애주기 (D-0007 1단계) ------------------------------------------------
+
+
+def test_record_decision_same_proposal_with_different_verdict_is_a_new_record():
+    """같은 제안이라도 판정이 바뀌면 접지 않는다 — 그것이 곧 결정의 변화다"""
+    repository = InMemoryRepository()
+    tools = _tools(repository)
+    _run(tools.record_decision(ALICE, _arguments(project="pit", verdict="reject", human_quote="처음엔 거부")))
+
+    result = _run(tools.record_decision(ALICE, _arguments(project="pit", verdict="approve", reject_kind=None, human_quote="다시 보니 승인")))
+
+    assert result["status"] == "recorded" and len(repository.rows) == 2
+
+
+def test_record_decision_same_proposal_within_days_is_folded_into_repeat():
+    repository = InMemoryRepository()
+    tools = _tools(repository)
+    first = _run(tools.record_decision(ALICE, _arguments(project="pit", human_quote="처음 거부")))
+
+    second = _run(tools.record_decision(ALICE, _arguments(project="pit", proposal="매번  전체를 다시 읽는다", human_quote="또 거부")))
+
+    assert second == {"id": first["id"], "status": "repeated", "redacted": 0}
+    assert len(repository.rows) == 1 and repository.rows[0].repeat_count == 2
+
+
+def test_record_decision_supersedes_must_belong_to_caller():
+    repository = InMemoryRepository()
+    tools = _tools(repository)
+    bobs = _run(tools.record_decision(BOB, _arguments()))["id"]
+
+    with pytest.raises(ToolFailure, match="supersedes"):
+        _run(tools.record_decision(ALICE, _arguments(human_quote="뒤집음", supersedes=[bobs])))
+
+    mine = _run(tools.record_decision(ALICE, _arguments(proposal="원래 제안", human_quote="원래 결정")))["id"]
+    newer = _run(tools.record_decision(ALICE, _arguments(proposal="다른 제안", human_quote="뒤집음", supersedes=[mine])))
+    assert next(r for r in repository.rows if r.id == newer["id"]).supersedes == [mine]
+
+
+def test_search_ranks_principle_and_verified_first_and_records_the_search():
+    repository = InMemoryRepository()
+    tools = _tools(repository)
+    _run(tools.record_decision(ALICE, _arguments(proposal="캐시 A", human_quote="a")))
+    _run(tools.record_decision(ALICE, _arguments(proposal="캐시 B", human_quote="b", tags=["principle"])))
+    _run(tools.record_decision(ALICE, _arguments(proposal="캐시 C", human_quote="c")))
+    _confirm(repository)
+
+    found = _run(tools.search_my_decisions(ALICE, "캐시", client="claude-code"))
+
+    assert [f["proposal"] for f in found][:2] == ["캐시 B", "캐시 C"]
+    assert found[0]["principle"] is True and found[1]["verified"] is True
+    assert repository.searches[0][1] == "캐시" and len(repository.searches[0][2]) == 3
+
+
+def test_get_decision_counts_as_a_citation():
+    repository = InMemoryRepository()
+    tools = _tools(repository)
+    decision_id = _run(tools.record_decision(ALICE, _arguments()))["id"]
+
+    _run(tools.get_decision(ALICE, decision_id))
+    _run(tools.get_decision(ALICE, decision_id))
+
+    assert repository.rows[0].cited_count == 2
+
+
+def test_search_summary_is_bounded():
+    repository = InMemoryRepository()
+    tools = _tools(repository)
+    _run(tools.record_decision(ALICE, _arguments(proposal="캐시 " + "가" * 500, human_quote="나" * 500)))
+
+    (item,) = _run(tools.search_my_decisions(ALICE, "캐시"))
+
+    assert len(item["proposal"]) <= 140 and len(item["human_quote"]) <= 140

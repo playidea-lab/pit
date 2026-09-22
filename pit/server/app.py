@@ -47,14 +47,19 @@ Do NOT record:
 
 How to fill it:
 - `human_quote`: the user's own words, verbatim. Never paraphrase.
-- `situation` / `proposal`: neutral, 1-2 sentences, without giving away the verdict.
+- `situation` / `proposal`: neutral, 1-2 sentences. They must NOT contain the verdict or words like
+  "rejected", "dropped", "approved", "adopted" — write what was on the table, not what happened to it.
+- If this decision overturns an earlier one, search first and pass its id in `supersedes`.
+- If the user gave the same verdict on the same proposal again within days, still call: the server folds it.
 - `rationale`: only what the user actually said. Do not guess.
 - Never include passwords, tokens, keys, customer names or personal data.
 - Do not announce the recording or ask permission each time; just continue the work.
 
 Before proposing an approach on a topic the user may have decided before, call `search_my_decisions`.
-Results marked `verified: false` were recorded automatically and not yet confirmed by the user; cite them
-with that caveat.
+Results are short summaries. Call `get_decision` for the full record of the ones you actually rely on —
+that call is how pithub learns which records are useful. Results marked `verified: false` were recorded
+automatically and not yet confirmed by the user; cite them with that caveat. `principle: true` marks a rule
+the user wants followed.
 """
 
 STORAGE_NOT_READY = "pithub 저장소가 아직 준비되지 않았습니다. 기록은 저장되지 않았습니다."
@@ -127,12 +132,14 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         client: Annotated[str | None, Field(description="Which app this is: claude.ai, claude-code, codex, ...")] = None,
         decided_at: Annotated[str | None, Field(description="ISO 8601 time, ONLY when backfilling a past decision from notes or documents. Omit for decisions made now.")] = None,
         tags: Annotated[list[str] | None, Field(description='Short topic tags. Use "principle" for a rule the user wants followed from now on.')] = None,
+        supersedes: Annotated[list[str] | None, Field(description="Ids of the user's earlier decisions that this one overturns (find them with search_my_decisions first).")] = None,
     ) -> dict[str, object]:
         """Record one decision that would matter later: a rejection, a correction, a choice among options, or an approval that sets direction. Skip routine go-aheads."""
         arguments = {
             "situation": situation, "proposal": proposal, "human_quote": human_quote, "verdict": verdict,
             "reject_kind": reject_kind, "rationale": rationale, "options": options or [], "chosen": chosen,
             "project": project, "client": client, "decided_at": decided_at, "tags": tags or [],
+            "supersedes": supersedes or [],
         }  # fmt: skip
         return await _run(ready().record_decision(_caller(), arguments))
 
@@ -140,9 +147,10 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
     async def search_my_decisions(
         query: Annotated[str, Field(description="Words to look for in this user's confirmed past decisions.")],
         limit: Annotated[int, Field(description="Maximum results.")] = DEFAULT_SEARCH_LIMIT,
+        client: Annotated[str | None, Field(description="Which app this is: claude.ai, claude-code, codex, ...")] = None,
     ) -> list[dict[str, object]]:
-        """Find how this user decided similar things before. Only their own confirmed decisions are searched."""
-        return await _run(ready().search_my_decisions(_caller(), query, limit))
+        """Find how this user decided similar things before. Returns short summaries; call get_decision for the full record of the ones you actually use."""
+        return await _run(ready().search_my_decisions(_caller(), query, limit, client))
 
     @server.tool
     async def get_decision(

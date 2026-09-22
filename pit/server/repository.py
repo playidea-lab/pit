@@ -12,7 +12,7 @@ from typing import Protocol
 import httpx
 
 from pit.server.identity import Caller
-from pit.server.records import StoredDecision
+from pit.server.records import StoredDecision, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,24 @@ class DecisionRepository(Protocol):
 
     async def project_default(self, owner_github_id: int, project: str) -> tuple[str, str | None] | None:
         """프로젝트별 기본 공개 범위 (visibility, team_id). 없으면 None → private."""
+        ...
+
+    async def find_recent_same_proposal(
+        self, owner_github_id: int, project: str | None, proposal_normalized: str, since: datetime
+    ) -> StoredDecision | None:
+        """같은 프로젝트에서 since 이후 같은 제안이 기록된 적이 있으면 그것"""
+        ...
+
+    async def bump_repeat(self, decision_id: str) -> None: ...
+
+    async def owns_all(self, owner_github_id: int, decision_ids: list[str]) -> bool:
+        """supersedes 로 가리킨 결정이 전부 호출자 것인가"""
+        ...
+
+    async def record_search(self, owner_github_id: int, query: str, returned_ids: list[str], client: str | None) -> None: ...
+
+    async def mark_cited(self, owner_github_id: int, decision_id: str) -> None:
+        """get_decision 으로 전체를 가져간 것을 '쓰였다'로 센다"""
         ...
 
     # --- 로컬 pit 용 (TokenRepository) ---
@@ -158,3 +176,53 @@ class SupabaseRepository:
         if not rows:
             return None
         return str(rows[0]["visibility"]), rows[0].get("team_id")
+
+    async def find_recent_same_proposal(
+        self, owner_github_id: int, project: str | None, proposal_normalized: str, since: datetime
+    ) -> StoredDecision | None:
+        params = {
+            "owner_github_id": f"eq.{owner_github_id}",
+            "status": f"neq.{STATUS_DISCARDED}",
+            "decided_at": f"gte.{since.isoformat()}",
+            "order": "decided_at.desc",
+            "limit": "50",
+        }
+        rows = (await self._request("GET", "/decisions", params=params)).json()
+        for row in rows:
+            decision = StoredDecision.model_validate(row)
+            same_project = decision.source.get("project") == project
+            if same_project and normalize_text(decision.proposal) == proposal_normalized:
+                return decision
+        return None
+
+    async def bump_repeat(self, decision_id: str) -> None:
+        current = (await self._request("GET", "/decisions", params={"id": f"eq.{decision_id}", "select": "repeat_count"})).json()
+        count = int(current[0]["repeat_count"]) + 1 if current else 2
+        await self._request(
+            "PATCH", "/decisions", params={"id": f"eq.{decision_id}"},
+            headers={"Prefer": "return=minimal"}, json={"repeat_count": count},
+        )  # fmt: skip
+
+    async def owns_all(self, owner_github_id: int, decision_ids: list[str]) -> bool:
+        if not decision_ids:
+            return True
+        ids = ",".join(f'"{decision_id}"' for decision_id in decision_ids)
+        params = {"owner_github_id": f"eq.{owner_github_id}", "id": f"in.({ids})", "select": "id"}
+        rows = (await self._request("GET", "/decisions", params=params)).json()
+        return len(rows) == len(set(decision_ids))
+
+    async def record_search(self, owner_github_id: int, query: str, returned_ids: list[str], client: str | None) -> None:
+        await self._request(
+            "POST", "/citations", headers={"Prefer": "return=minimal"},
+            json={"owner_github_id": owner_github_id, "query": query, "returned_ids": returned_ids, "client": client},
+        )  # fmt: skip
+
+    async def mark_cited(self, owner_github_id: int, decision_id: str) -> None:
+        params = {"id": f"eq.{decision_id}", "owner_github_id": f"eq.{owner_github_id}", "select": "cited_count"}
+        rows = (await self._request("GET", "/decisions", params=params)).json()
+        if not rows:
+            return
+        await self._request(
+            "PATCH", "/decisions", params={"id": f"eq.{decision_id}"}, headers={"Prefer": "return=minimal"},
+            json={"cited_count": int(rows[0]["cited_count"]) + 1, "last_cited_at": datetime.now().astimezone().isoformat()},
+        )  # fmt: skip
