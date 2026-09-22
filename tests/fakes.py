@@ -73,14 +73,14 @@ class InMemoryRepository:
         self.rows.append(decision)
         return True
 
-    async def search_confirmed(self, owner_github_id: int, query: str, limit: int) -> list:
+    async def search_recorded(self, owner_github_id: int, query: str, limit: int) -> list:
         self._maybe_fail()
         needle = query.lower()
         found = [
             row
             for row in self.rows
             if row.owner_github_id == owner_github_id
-            and row.status == "confirmed"
+            and row.status != "discarded"
             and needle in f"{row.situation} {row.proposal} {row.rationale} {row.human_quote}".lower()
         ]
         return found[:limit]

@@ -65,7 +65,7 @@ class DecisionTools:
         self, caller: Caller, query: str, limit: int = DEFAULT_SEARCH_LIMIT
     ) -> list[dict[str, object]]:
         bounded = max(1, min(limit, MAX_SEARCH_LIMIT))
-        found = await self.repository.search_confirmed(caller.github_id, query, bounded)
+        found = await self.repository.search_recorded(caller.github_id, query, bounded)
         return [_summary(decision) for decision in found]
 
     async def get_decision(self, caller: Caller, decision_id: str) -> dict[str, object]:
@@ -83,6 +83,8 @@ def _summary(decision: StoredDecision) -> dict[str, object]:
         "verdict": decision.verdict,
         "chosen": decision.chosen,
         "human_quote": decision.human_quote,
+        # 사람이 확인한 기록인지 — 모델이 인용할 때 무게를 달리 둘 수 있다
+        "verified": decision.status == "confirmed",
     }
 
 

@@ -16,6 +16,8 @@ from pit.transcripts.redact import RedactionRules, redact
 
 MAX_TEXT_CHARS = 4000
 MAX_OPTIONS = 12
+MAX_TAGS = 8
+MAX_TAG_CHARS = 40
 DEDUPE_KEY_CHARS = 32
 ORIGIN_MCP = "mcp"
 # 백필로 넣을 수 있는 과거 시각의 하한. 이보다 오래된 것은 시간 분할 평가에서 의미가 없다.
@@ -39,6 +41,7 @@ class RecordDecisionInput(BaseModel):
     chosen: str | None = Field(default=None, max_length=MAX_TEXT_CHARS)
     project: str | None = Field(default=None, max_length=200)
     client: str | None = Field(default=None, max_length=80)
+    tags: list[str] = Field(default_factory=list, max_length=MAX_TAGS)
     # 과거 결정을 옮길 때만 준다 (메모·문서 백필). 없으면 서버 시각.
     decided_at: datetime | None = None
 
@@ -130,6 +133,7 @@ def to_stored(payload: RecordDecisionInput, owner_github_id: int, now: datetime)
         chosen=clean(payload.chosen) if payload.chosen else None,
         rationale=clean(payload.rationale),
         human_quote=clean(payload.human_quote),
+        tags=[clean(tag)[:MAX_TAG_CHARS] for tag in payload.tags if tag.strip()],
         decided_at=decided_at,
         source={key: clean(value) for key, value in source.items()},
         redactions=dict(counts),

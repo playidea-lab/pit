@@ -17,7 +17,7 @@ from pit.server.records import StoredDecision
 logger = logging.getLogger(__name__)
 
 HTTP_TIMEOUT_SECONDS = 10.0
-STATUS_CONFIRMED = "confirmed"
+STATUS_DISCARDED = "discarded"
 SEARCH_COLUMNS = ("situation", "proposal", "rationale", "human_quote")
 # PostgREST의 or=() 문법에서 뜻을 갖는 문자. 검색어에서 빼 버린다 (v1은 단순 부분 일치로 충분하다).
 _FILTER_SYNTAX = re.compile(r'[,()"\\*%]')
@@ -34,7 +34,7 @@ class DecisionRepository(Protocol):
         """초안을 저장한다. 같은 중복 키가 이미 있으면 저장하지 않고 False."""
         ...
 
-    async def search_confirmed(self, owner_github_id: int, query: str, limit: int) -> list[StoredDecision]: ...
+    async def search_recorded(self, owner_github_id: int, query: str, limit: int) -> list[StoredDecision]: ...
 
     async def get(self, owner_github_id: int, decision_id: str) -> StoredDecision | None: ...
 
@@ -93,10 +93,11 @@ class SupabaseRepository:
         )
         return bool(response.json())
 
-    async def search_confirmed(self, owner_github_id: int, query: str, limit: int) -> list[StoredDecision]:
+    async def search_recorded(self, owner_github_id: int, query: str, limit: int) -> list[StoredDecision]:
         params = {
             "owner_github_id": f"eq.{owner_github_id}",
-            "status": f"eq.{STATUS_CONFIRMED}",
+            # 확인 전 기록도 검색된다. 기록은 자동, 확인은 쓰는 순간에 한다.
+            "status": f"neq.{STATUS_DISCARDED}",
             "order": "decided_at.desc",
             "limit": str(limit),
         }

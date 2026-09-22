@@ -31,22 +31,30 @@ ResultT = TypeVar("ResultT")
 # 세 클라이언트(claude.ai · Claude Code · Codex)의 모델이 읽는 글이다.
 SERVER_INSTRUCTIONS = """\
 pithub keeps a personal record of the decisions this user makes while working with an AI assistant.
+Record decisions that would matter to someone asking later "why did you do it this way?" — not every step.
 
-Call `record_decision` once, right after the user reacts to something you proposed:
-- they accept it ("ok", "go ahead", moving on to the next step) -> verdict "approve"
-- they accept it with a change or a condition -> verdict "modify"
-- they turn it down or steer elsewhere ("no, not that", "skip it") -> verdict "reject"
-- they pick one of several options you offered -> set `options` and `chosen`
+Record (call `record_decision` once, right after the user reacts):
+- the user REJECTS or CORRECTS something you proposed ("no, not that", "do X instead", "drop it"). These matter most.
+- the user CHOOSES between alternatives you laid out (set `options` and `chosen`).
+- the user APPROVES a proposal that sets direction: architecture, scope, a rule to follow from now on,
+  a trade-off accepted, something deliberately not done. Use `tags: ["principle"]` when it is a rule going forward.
 
-Rules:
-- Rejections and corrections matter most. Record them even when the conversation moves on quickly.
-- `human_quote` must be the user's own words, copied verbatim. Never paraphrase it.
-- Describe `situation` and `proposal` neutrally. Do not soften a rejection into an approval.
-- Never put passwords, tokens, keys or customer data in any field.
-- Do not record small talk, factual Q&A, or a user message that starts a new task with nothing to react to.
+Do NOT record:
+- routine go-aheads on incremental steps ("ok", "continue", "next") with nothing at stake
+- the user starting a task, asking a factual question, or giving information
+- your own decisions that the user did not react to
+- anything you are unsure about — a missed record is cheaper than a wrong one
+
+How to fill it:
+- `human_quote`: the user's own words, verbatim. Never paraphrase.
+- `situation` / `proposal`: neutral, 1-2 sentences, without giving away the verdict.
+- `rationale`: only what the user actually said. Do not guess.
+- Never include passwords, tokens, keys, customer names or personal data.
 - Do not announce the recording or ask permission each time; just continue the work.
 
-Call `search_my_decisions` when a past choice of this user would inform what you are about to propose.
+Before proposing an approach on a topic the user may have decided before, call `search_my_decisions`.
+Results marked `verified: false` were recorded automatically and not yet confirmed by the user; cite them
+with that caveat.
 """
 
 STORAGE_NOT_READY = "pithub 저장소가 아직 준비되지 않았습니다. 기록은 저장되지 않았습니다."
@@ -118,12 +126,13 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         project: Annotated[str | None, Field(description="Project or topic name, if obvious.")] = None,
         client: Annotated[str | None, Field(description="Which app this is: claude.ai, claude-code, codex, ...")] = None,
         decided_at: Annotated[str | None, Field(description="ISO 8601 time, ONLY when backfilling a past decision from notes or documents. Omit for decisions made now.")] = None,
+        tags: Annotated[list[str] | None, Field(description='Short topic tags. Use "principle" for a rule the user wants followed from now on.')] = None,
     ) -> dict[str, object]:
-        """Record one decision: the user's verdict on something you proposed. Call right after they react."""
+        """Record one decision that would matter later: a rejection, a correction, a choice among options, or an approval that sets direction. Skip routine go-aheads."""
         arguments = {
             "situation": situation, "proposal": proposal, "human_quote": human_quote, "verdict": verdict,
             "reject_kind": reject_kind, "rationale": rationale, "options": options or [], "chosen": chosen,
-            "project": project, "client": client, "decided_at": decided_at,
+            "project": project, "client": client, "decided_at": decided_at, "tags": tags or [],
         }  # fmt: skip
         return await _run(ready().record_decision(_caller(), arguments))
 

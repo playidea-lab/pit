@@ -208,18 +208,19 @@ def test_search_my_decisions_never_returns_other_users_rows():
     assert len(_run(tools.search_my_decisions(BOB, "캐시"))) == 1
 
 
-def test_search_my_decisions_excludes_drafts_and_discarded():
+def test_search_my_decisions_includes_unverified_but_not_discarded():
+    """기록은 곧바로 검색된다. 버린 것만 빠지고, 확인 여부는 결과에 표시된다."""
     repository = InMemoryRepository()
     tools = _tools(repository)
-    _run(tools.record_decision(ALICE, _arguments(human_quote="초안 캐시")))
+    _run(tools.record_decision(ALICE, _arguments(human_quote="미확인 캐시")))
     _run(tools.record_decision(ALICE, _arguments(human_quote="버린 캐시")))
     repository.rows[-1] = repository.rows[-1].model_copy(update={"status": "discarded"})
-    _run(tools.record_decision(ALICE, _arguments(human_quote="확정한 캐시")))
+    _run(tools.record_decision(ALICE, _arguments(human_quote="확인한 캐시")))
     _confirm(repository)
 
     found = _run(tools.search_my_decisions(ALICE, "캐시"))
 
-    assert [item["human_quote"] for item in found] == ["확정한 캐시"]
+    assert sorted((item["human_quote"], item["verified"]) for item in found) == [("미확인 캐시", False), ("확인한 캐시", True)]
 
 
 def test_get_decision_of_another_user_is_reported_as_missing():
@@ -288,17 +289,17 @@ def _supabase(handler) -> SupabaseRepository:  # noqa: ANN001
     return SupabaseRepository("https://example.test/", "service-key-placeholder", client)
 
 
-def test_supabase_search_always_scopes_to_owner_and_confirmed():
+def test_supabase_search_always_scopes_to_owner_and_excludes_discarded():
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, json=[])
 
-    _run(_supabase(handler).search_confirmed(1001, 'x"),owner_github_id.eq.2002,(a', 5))
+    _run(_supabase(handler).search_recorded(1001, 'x"),owner_github_id.eq.2002,(a', 5))
 
     params = dict(seen[0].url.params)
-    assert params["owner_github_id"] == "eq.1001" and params["status"] == "eq.confirmed"
+    assert params["owner_github_id"] == "eq.1001" and params["status"] == "neq.discarded"
     assert "2002" in params["or"] and "eq.2002" not in params["or"].replace("owner_github_id.eq.2002", "")
     assert '"' not in params["or"] and params["or"].count("(") == 1
 
