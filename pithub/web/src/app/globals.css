@@ -1,26 +1,206 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   디자인 토큰 — 따뜻한 중성 회색 위에 강조색 하나(잉크). 판정 색은 채도를 낮춘다.
+   --------------------------------------------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-muted: #f1efeb;
+  --border: #e6e2db;
+  --border-strong: #cfc9bf;
+  --ink: #1c1917;
+  --text: #292524;
+  --text-muted: #78716c;
+  --text-faint: #a8a29e;
+  --accent: #3f3f8f;
+  --accent-soft: #eceafc;
+
+  --approve-bg: #e6f4ea;
+  --approve-fg: #1e6b3a;
+  --modify-bg: #fdf1dc;
+  --modify-fg: #8a5a12;
+  --reject-bg: #fbe7e4;
+  --reject-fg: #a23b2f;
+  --choice-bg: #eceafc;
+  --choice-fg: #3f3f8f;
+
+  --radius: 12px;
+  --shadow: 0 1px 2px rgba(28, 25, 23, 0.04), 0 4px 16px -8px rgba(28, 25, 23, 0.08);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --font-sans: var(--font-geist-sans), "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.005em;
+}
+
+/* ---------------------------------------------------------------------------
+   공통 컴포넌트 — 화면마다 색을 다시 고르지 않는다
+   --------------------------------------------------------------------------- */
+@layer components {
+  .page {
+    @apply mx-auto w-full max-w-3xl px-6 py-10;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    @apply p-5;
+  }
+
+  .card-link {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    @apply p-5 transition-colors;
+  }
+  .card-link:hover {
+    border-color: var(--border-strong);
+  }
+
+  .btn {
+    @apply inline-flex h-9 items-center gap-1.5 rounded-lg border px-3.5 text-sm font-medium transition-colors;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: #fff;
+  }
+  .btn-primary:hover {
+    background: #000;
+  }
+  .btn-secondary {
+    background: var(--surface);
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .btn-secondary:hover {
+    background: var(--surface-muted);
+  }
+  .btn-ghost {
+    border-color: transparent;
+    color: var(--text-muted);
+  }
+  .btn-ghost:hover {
+    background: var(--surface-muted);
+    color: var(--text);
+  }
+  .btn-danger {
+    border-color: transparent;
+    color: var(--reject-fg);
+  }
+  .btn-danger:hover {
+    background: var(--reject-bg);
+  }
+
+  .input {
+    @apply h-9 w-full rounded-lg border px-3 text-sm;
+    background: var(--surface);
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .input:focus {
+    outline: 2px solid var(--accent-soft);
+    border-color: var(--accent);
+  }
+  textarea.input {
+    @apply h-auto py-2 leading-relaxed;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold;
+  }
+  .badge-approve {
+    background: var(--approve-bg);
+    color: var(--approve-fg);
+  }
+  .badge-modify {
+    background: var(--modify-bg);
+    color: var(--modify-fg);
+  }
+  .badge-reject {
+    background: var(--reject-bg);
+    color: var(--reject-fg);
+  }
+  .badge-choice {
+    background: var(--choice-bg);
+    color: var(--choice-fg);
+  }
+
+  .tab {
+    @apply rounded-lg px-3 py-1.5 text-sm transition-colors;
+    color: var(--text-muted);
+  }
+  .tab:hover {
+    color: var(--text);
+  }
+  .tab-active {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    box-shadow: var(--shadow);
+  }
+
+  .label {
+    @apply text-[11px] font-semibold uppercase tracking-wider;
+    color: var(--text-faint);
+  }
+
+  .quote {
+    @apply pl-3 text-[15px] leading-relaxed;
+    border-left: 2px solid var(--border-strong);
+    color: var(--text);
+  }
+
+  .code {
+    @apply mt-2 overflow-x-auto rounded-lg p-3 text-[13px] leading-relaxed;
+    background: var(--ink);
+    color: #e7e5e4;
+    font-family: var(--font-mono);
+  }
+
+  .muted {
+    color: var(--text-muted);
+  }
+  .faint {
+    color: var(--text-faint);
+  }
+  .link {
+    color: var(--accent);
+    @apply underline-offset-4 hover:underline;
+  }
+  .empty {
+    @apply rounded-xl border border-dashed p-10 text-center;
+    border-color: var(--border-strong);
+    color: var(--text-muted);
+  }
 }

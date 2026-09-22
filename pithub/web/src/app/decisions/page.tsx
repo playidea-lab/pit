@@ -30,36 +30,29 @@ export default async function MyDecisionsPage({ searchParams }: PageProps) {
   const [account, decisions] = await Promise.all([getMyAccount(supabase), listMyDecisions(supabase, filter)]);
 
   return (
-    <main className="min-h-screen">
+    <main>
       <Header signedIn handle={account?.github_login} />
-      <section className="max-w-3xl mx-auto px-6 py-10">
-        <h1 className="text-2xl font-bold mb-6">내 결정</h1>
+      <section className="page">
+        <h1 className="mb-6 text-2xl font-semibold tracking-tight text-ink">내 결정</h1>
 
-        <div className="flex flex-wrap items-center gap-2 mb-6">
+        <div className="mb-6 flex flex-wrap items-center gap-1.5">
           {FILTERS.map((f) => (
             <Link
               key={f.value}
               href={{ pathname: "/decisions", query: { ...(f.value && { verdict: f.value }), ...(q && { q }) } }}
-              className={`px-3 py-1.5 rounded-lg text-sm ${
-                verdict === f.value ? "bg-gray-700 text-white" : "text-gray-400 hover:text-white"
-              }`}
+              className={`tab ${verdict === f.value ? "tab-active" : ""}`}
             >
               {f.label}
             </Link>
           ))}
-          <form className="ml-auto">
+          <form className="ml-auto w-64">
             {verdict && <input type="hidden" name="verdict" value={verdict} />}
-            <input
-              name="q"
-              defaultValue={q}
-              placeholder="상황·제안·근거·내 말에서 찾기"
-              className="rounded-lg bg-gray-900 border border-gray-700 px-3 py-1.5 text-sm w-64"
-            />
+            <input name="q" defaultValue={q} placeholder="상황·제안·근거·내 말에서 찾기" className="input" />
           </form>
         </div>
 
         {decisions.length === 0 ? (
-          <p className="text-gray-400">확정한 결정이 없습니다.</p>
+          <div className="empty">확정한 결정이 없습니다.</div>
         ) : (
           <div className="space-y-3">
             {decisions.map((decision) => (

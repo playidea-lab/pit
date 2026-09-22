@@ -13,6 +13,13 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+const VISIBILITY_LABEL: Record<string, string> = {
+  private: "비공개",
+  team: "팀",
+  friends: "친구",
+  public: "공개",
+};
+
 /**
  * 결정 상세. 소유자에게는 전체 열과 공개·삭제 조작이, 그 밖의 사람에게는 공개 뷰의 열만 보인다.
  * 남의 비공개 결정은 존재 여부도 알려 주지 않는다(404).
@@ -29,67 +36,72 @@ export default async function DecisionPage({ params }: PageProps) {
   if (!shown) notFound();
 
   const owner = mine ? account?.github_login : published?.github_login;
+  const isPublic = mine?.visibility === "public";
 
   return (
-    <main className="min-h-screen">
+    <main>
       <Header signedIn={Boolean(user)} handle={account?.github_login} />
-      <section className="max-w-3xl mx-auto px-6 py-10">
-        <div className="flex items-center gap-3 mb-2 text-sm text-gray-500">
+      <section className="page">
+        <div className="faint mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
           {owner && (
-            <Link href={`/u/${owner}`} className="hover:text-white">
+            <Link href={`/u/${owner}`} className="muted hover:text-ink">
               {owner}
             </Link>
           )}
-          <span>· {formatDate(shown.decided_at)}</span>
+          <span>{formatDate(shown.decided_at)}</span>
           {mine && (
-            <span className={mine.visibility === "public" ? "text-green-400" : "text-gray-500"}>
-              · {mine.visibility === "public" ? "공개" : "비공개"} · {mine.status}
+            <span className={isPublic ? "text-[var(--approve-fg)]" : ""}>
+              {VISIBILITY_LABEL[mine.visibility]} · {mine.status === "confirmed" ? "확정" : mine.status}
             </span>
           )}
         </div>
 
-        <div className="mb-6">
+        <div className="mb-8">
           <VerdictBadge verdict={shown.verdict} chosen={shown.chosen} />
         </div>
 
-        <dl className="space-y-5">
+        <div className="card space-y-6">
           <Row label="상황">{shown.situation}</Row>
-          <Row label="제안">{shown.proposal}</Row>
+          <Row label="제안">
+            <span className="text-[17px] font-medium text-ink">{shown.proposal}</span>
+          </Row>
           {shown.options.length > 0 && <Row label="선택지">{shown.options.join(" · ")}</Row>}
           <Row label="내 말">
-            <blockquote className="border-l-2 border-gray-700 pl-3 text-gray-300">{shown.human_quote}</blockquote>
+            <blockquote className="quote">{shown.human_quote}</blockquote>
           </Row>
-          {shown.rationale && <Row label="근거">{shown.rationale}</Row>}
+          {shown.rationale && shown.rationale !== shown.human_quote && <Row label="근거">{shown.rationale}</Row>}
           {shown.supersedes.length > 0 && (
             <Row label="뒤집은 결정">
               {shown.supersedes.map((prev) => (
-                <Link key={prev} href={`/d/${prev}`} className="text-blue-400 hover:underline mr-3">
+                <Link key={prev} href={`/d/${prev}`} className="link mr-3 font-mono text-sm">
                   {prev}
                 </Link>
               ))}
             </Row>
           )}
           {mine && Object.keys(mine.source).length > 0 && (
-            <Row label="출처 (본인만)">
-              {Object.entries(mine.source)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(" · ")}
+            <Row label="출처 · 본인만">
+              <span className="muted text-sm">
+                {Object.entries(mine.source)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join(" · ")}
+              </span>
             </Row>
           )}
-        </dl>
+        </div>
 
         {mine && mine.status === "confirmed" && (
-          <div className="mt-10 flex items-center gap-3 border-t border-gray-800 pt-6">
+          <div className="mt-6 flex items-center gap-2">
             <form action={setVisibility}>
               <input type="hidden" name="id" value={mine.id} />
-              <input type="hidden" name="visibility" value={mine.visibility === "public" ? "private" : "public"} />
-              <button className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm">
-                {mine.visibility === "public" ? "비공개로 전환" : "공개하기"}
+              <input type="hidden" name="visibility" value={isPublic ? "private" : "public"} />
+              <button className={isPublic ? "btn btn-secondary" : "btn btn-primary"}>
+                {isPublic ? "비공개로 전환" : "공개하기"}
               </button>
             </form>
             <form action={deleteDecision} className="ml-auto">
               <input type="hidden" name="id" value={mine.id} />
-              <button className="px-4 py-2 rounded-lg text-sm text-red-300 hover:bg-red-900/40">삭제</button>
+              <button className="btn btn-danger">삭제</button>
             </form>
           </div>
         )}
@@ -101,8 +113,8 @@ export default async function DecisionPage({ params }: PageProps) {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">{label}</dt>
-      <dd className="text-gray-100">{children}</dd>
+      <dt className="label mb-1.5">{label}</dt>
+      <dd className="leading-relaxed">{children}</dd>
     </div>
   );
 }

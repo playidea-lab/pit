@@ -16,20 +16,20 @@ export default async function InboxPage() {
   const [account, inbox] = await Promise.all([getMyAccount(supabase), listInbox(supabase)]);
 
   return (
-    <main className="min-h-screen">
+    <main>
       <Header signedIn handle={account?.github_login} />
-      <section className="max-w-3xl mx-auto px-6 py-10">
-        <div className="flex items-baseline justify-between mb-6">
-          <h1 className="text-2xl font-bold">받은함</h1>
-          <span className="text-sm text-gray-500">{inbox.length}건 대기</span>
+      <section className="page">
+        <div className="mb-6 flex items-baseline justify-between">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">받은함</h1>
+          <span className="muted text-sm">{inbox.length}건 대기</span>
         </div>
 
         {inbox.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-800 p-10 text-center text-gray-400">
-            <p className="mb-3">검토할 결정이 없습니다.</p>
+          <div className="empty">
+            <p className="mb-2 text-ink">검토할 결정이 없습니다.</p>
             <p className="text-sm">
               아직 아무 도구도 연결하지 않았다면{" "}
-              <Link href="/connect" className="text-blue-400 hover:underline">
+              <Link href="/connect" className="link">
                 연결하기
               </Link>
               에서 시작하세요.

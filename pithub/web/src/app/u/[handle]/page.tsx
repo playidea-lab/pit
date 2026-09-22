@@ -30,26 +30,26 @@ export default async function PublicProfilePage({ params, searchParams }: PagePr
   const avatar = decisions[0]?.avatar_url;
 
   return (
-    <main className="min-h-screen">
+    <main>
       <Header signedIn={Boolean(user)} handle={account?.github_login} />
-      <section className="max-w-3xl mx-auto px-6 py-10">
-        <div className="flex items-center gap-3 mb-6">
+      <section className="page">
+        <div className="mb-8 flex items-center gap-4">
           {avatar && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatar} alt={handle} className="w-10 h-10 rounded-full" />
+            <img src={avatar} alt={handle} className="h-12 w-12 rounded-full border border-border" />
           )}
-          <h1 className="text-2xl font-bold">{handle}</h1>
-          <span className="text-sm text-gray-500">공개한 결정</span>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">{handle}</h1>
+            <p className="muted text-sm">공개한 결정 {decisions.length}건</p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 mb-6">
+        <div className="mb-6 flex items-center gap-1.5">
           {FILTERS.map((f) => (
             <Link
               key={f.value}
               href={{ pathname: `/u/${handle}`, query: f.value ? { verdict: f.value } : {} }}
-              className={`px-3 py-1.5 rounded-lg text-sm ${
-                verdict === f.value ? "bg-gray-700 text-white" : "text-gray-400 hover:text-white"
-              }`}
+              className={`tab ${verdict === f.value ? "tab-active" : ""}`}
             >
               {f.label}
             </Link>
@@ -57,7 +57,7 @@ export default async function PublicProfilePage({ params, searchParams }: PagePr
         </div>
 
         {decisions.length === 0 ? (
-          <p className="text-gray-400">공개된 결정이 없습니다.</p>
+          <div className="empty">공개된 결정이 없습니다.</div>
         ) : (
           <div className="space-y-3">
             {decisions.map((decision) => (

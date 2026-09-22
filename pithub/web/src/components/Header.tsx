@@ -8,20 +8,32 @@ interface HeaderProps {
   handle?: string | null;
 }
 
+const NAV = [
+  { href: "/inbox", label: "받은함" },
+  { href: "/decisions", label: "내 결정" },
+  { href: "/connect", label: "연결" },
+  { href: "/settings", label: "설정" },
+];
+
 export default function Header({ signedIn, handle }: HeaderProps) {
   return (
-    <header className="border-b border-gray-800 px-6 py-3">
-      <div className="max-w-5xl mx-auto flex items-center gap-6">
-        <Link href="/" className="text-lg font-bold">
-          <span className="text-blue-400">pit</span>hub
+    <header className="sticky top-0 z-10 border-b border-border bg-surface/90 backdrop-blur">
+      <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-7 px-6">
+        <Link href="/" className="text-[17px] font-semibold tracking-tight text-ink">
+          <span className="text-accent">pit</span>hub
         </Link>
         {signedIn && (
-          <nav className="flex items-center gap-4 text-sm text-gray-400">
-            <Link href="/inbox" className="hover:text-white">받은함</Link>
-            <Link href="/decisions" className="hover:text-white">내 결정</Link>
-            {handle && <Link href={`/u/${handle}`} className="hover:text-white">공개 페이지</Link>}
-            <Link href="/connect" className="hover:text-white">연결</Link>
-            <Link href="/settings" className="hover:text-white">설정</Link>
+          <nav className="flex items-center gap-5 text-sm">
+            {NAV.map((item) => (
+              <Link key={item.href} href={item.href} className="muted transition-colors hover:text-ink">
+                {item.label}
+              </Link>
+            ))}
+            {handle && (
+              <Link href={`/u/${handle}`} className="muted transition-colors hover:text-ink">
+                공개 페이지
+              </Link>
+            )}
           </nav>
         )}
         <div className="ml-auto">
