@@ -10,8 +10,20 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 const SAFE_NEXT = /^\/[A-Za-z0-9_\-/]*$/;
 
+/**
+ * 사용자가 실제로 접속한 주소. 컨테이너 안에서 request.url 은 http://0.0.0.0:3000/... 이라
+ * 그대로 쓰면 로그인 뒤 그 주소로 보내 버린다. 프록시가 넘겨 준 헤더를 우선한다.
+ */
+function publicOrigin(request: Request): string {
+  const url = new URL(request.url);
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? url.host;
+  const proto = request.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
+  return `${proto}://${host}`;
+}
+
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
+  const origin = publicOrigin(request);
   const code = searchParams.get("code");
   const requested = searchParams.get("next") ?? "/inbox";
   // 열린 리다이렉트를 막는다: 같은 사이트의 경로만 허용
