@@ -53,7 +53,7 @@ class DecisionTools:
         # 글의 내용은 로그에 남기지 않는다
         logger.info(
             "결정 기록",
-            extra={"decision_id": decision.id, "created": created, "redacted": sum(decision.redactions.values())},
+            extra={"decision_id": decision.id, "stored": created, "redacted": sum(decision.redactions.values())},
         )
         return {
             "id": decision.id,

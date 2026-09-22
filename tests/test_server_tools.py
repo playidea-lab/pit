@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -100,6 +101,17 @@ def test_record_decision_decided_at_out_of_range_is_rejected(when: str):
         _run(_tools(repository).record_decision(ALICE, _arguments(decided_at=when)))
 
     assert repository.rows == []
+
+
+def test_record_decision_with_info_logging_enabled_does_not_crash(caplog):
+    """운영은 INFO 로그를 켠다. 로깅 예약어(created 등)를 extra에 쓰면 그때만 터진다."""
+    caplog.set_level(logging.DEBUG, logger="pit")
+    repository = InMemoryRepository()
+
+    result = _run(_tools(repository).record_decision(ALICE, _arguments()))
+
+    assert result["status"] == "recorded"
+    assert any("결정 기록" in record.message for record in caplog.records)
 
 
 def test_record_decision_secret_in_quote_is_masked_before_storage():
