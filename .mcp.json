@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pithub-pilab": {
+      "type": "http",
+      "url": "https://pit.fly.dev/t/pilab/mcp"
+    }
+  }
+}

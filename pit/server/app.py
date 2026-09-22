@@ -16,7 +16,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.providers.github import GitHubProvider
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from pydantic import Field
+from pydantic import AnyHttpUrl, Field
 from starlette.middleware import Middleware
 
 from pit.server.api import LocalApi
@@ -82,6 +82,18 @@ def _caller() -> Caller:
         raise ToolError(str(e)) from e
 
 
+class OriginScopedGitHubProvider(GitHubProvider):
+    """보호 리소스를 `/mcp` 하나가 아니라 서버 origin 전체로 광고한다
+
+    MCP 클라이언트(Claude Code 등)는 메타데이터의 resource 가 접속 주소의 접두사일 때만 받아 준다.
+    팀 주소 `/t/<slug>/mcp` 도 같은 서버이므로 resource 는 origin 이어야 한다.
+    토큰의 audience 검증은 FastMCP 내부에서 따로 하므로 기존 로그인은 그대로 유효하다.
+    """
+
+    def _get_resource_url(self, path: str | None = None) -> AnyHttpUrl | None:
+        return self.base_url
+
+
 def _build_auth(settings: ServerSettings) -> GitHubProvider:
     client_storage = None
     if settings.oauth_storage_dir and settings.oauth_storage_key:
@@ -91,7 +103,7 @@ def _build_auth(settings: ServerSettings) -> GitHubProvider:
             key_value=DiskStore(directory=str(settings.oauth_storage_dir)),
             fernet=Fernet(settings.oauth_storage_key.encode()),
         )
-    return GitHubProvider(
+    return OriginScopedGitHubProvider(
         client_id=settings.github_client_id,
         client_secret=settings.github_client_secret,
         base_url=settings.base_url,

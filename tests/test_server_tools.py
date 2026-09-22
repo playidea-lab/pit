@@ -578,3 +578,22 @@ def test_current_team_slug_reads_path_state_then_query(monkeypatch):
     assert identity.current_team_slug() == "q-team"
     monkeypatch.setattr(identity, "get_http_request", lambda: NS(scope={}, query_params={}))
     assert identity.current_team_slug() is None
+
+
+def test_protected_resource_is_the_whole_origin_so_team_addresses_pass_client_checks():
+    """MCP 클라이언트는 광고된 resource 가 접속 주소의 접두사일 때만 받아 준다 — /mcp 도 /t/<slug>/mcp 도"""
+    from pit.server.app import HTTP_MIDDLEWARE
+
+    app = build_server(SETTINGS, InMemoryRepository()).http_app(middleware=HTTP_MIDDLEWARE)
+    transport = httpx.ASGITransport(app=app)
+
+    async def probe() -> tuple[str, dict]:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            challenge = (await client.post("/t/pilab/mcp", json={})).headers["www-authenticate"]
+            metadata = (await client.get("/.well-known/oauth-protected-resource")).json()
+            return challenge, metadata
+
+    challenge, metadata = asyncio.run(probe())
+
+    assert 'resource_metadata="http://127.0.0.1:8000/.well-known/oauth-protected-resource"' in challenge
+    assert metadata["resource"].rstrip("/") == "http://127.0.0.1:8000"
