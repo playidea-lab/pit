@@ -1,0 +1,51 @@
+# 메모 백필 — pithub 커넥터가 연결된 Claude Code 세션에 붙여 넣는 지시문
+
+> 별도 도구 없이 세션의 모델이 `record_decision` 을 직접 부른다 (D-0006). 서버 `record_decision` 은
+> `decided_at` 과 `client` 를 받는다. 빈도 제한은 시간당 300회.
+
+## 실행 방법
+
+1. 새 터미널에서 `claude` 를 시작한다 (`pithub` 커넥터가 사용자 설정에 등록돼 있으므로 새 세션에는 도구가 있다).
+2. `/mcp` 로 pithub 가 연결·인증돼 있는지 확인한다.
+3. 아래 지시문을 그대로 붙여 넣는다.
+
+## 지시문
+
+```
+~/.claude/projects/-Users-changmin/memory/ 의 메모를 읽고, 그 안의 결정을 pithub의 record_decision 으로 기록해 줘.
+
+읽을 파일: project_*.md, feedback_*.md, reference_*.md. MEMORY.md(색인)와 disk_cleanup_state.md 는 빼.
+건너뛸 파일 (고객 데이터가 섞여 있음): project_lges_inspector.md, project_lges_tr_tool.md,
+project_dental_lesion_detection.md, project_ksh_cq.md, project_ccw_anomaly.md, project_sesac_textbook.md,
+project_hyukhyun_ieee.md.
+
+결정 하나의 기준: "제안이 있었고 내가 승인·수정·거부했다" 또는 "선택지 중 하나를 골랐다"로 읽히는 문장.
+사실 서술("X가 Y였다")은 결정이 아니다. 단, "결론: ~이 최선", "폐기", "기각", "확정", "금지", "~로 전환"은 결정이다.
+feedback_*.md 는 여러 번 교정한 끝에 굳어진 원칙이다. 그 원칙을 어긴 제안을 거부한 결정으로 기록하고 rationale 에 이유를 쓰고 project 를 "principle" 로 해.
+
+각 record_decision 호출:
+- situation: 무엇을 하던 중이었는지 1~2문장, 판정 내용을 미리 드러내지 않게
+- proposal: 검토 대상이 된 안(LLM이든 내가 세운 가설이든) 1~2문장, 중립적으로
+- verdict: approve / modify / reject (선택형이면 verdict 대신 options + chosen)
+- reject_kind: 거부일 때 stop(그만둠) 또는 redirect(다른 방향으로)
+- rationale: 메모에 이유가 적혀 있을 때만, 없으면 비워 둬
+- human_quote: 메모의 해당 문장을 글자 그대로. 바꾸거나 요약하지 마.
+- decided_at: 메모 안의 날짜(예: "9/14" → 2026-09-14T12:00:00+09:00). 문장에 날짜가 없으면 그 메모의 가장 가까운 앞 날짜, 그것도 없으면 frontmatter의 modified 또는 파일 수정일.
+- client: "claude-memory"
+- project: 메모 파일명에서 (예: project_borch_fed.md → "borch-fed")
+
+규칙:
+- 고객사·기관·사람 이름이 나오면 일반 명사로 바꿔 (예: "고객사 A", "치과 데이터셋"). 비밀번호·키·경로의 토큰은 절대 넣지 마.
+- 같은 결정이 여러 메모에 있으면 한 번만. 나중 메모가 앞의 결정을 뒤집었으면 둘 다 기록하되 나중 것의 rationale 에 "이전 결정을 뒤집음"을 적어.
+- 확신이 없으면 빼. 애매한 것을 넣는 것보다 빠뜨리는 게 낫다.
+- 한 메모를 끝낼 때마다 "파일명: N건 기록" 한 줄만 출력하고 다음으로 넘어가. 도구 결과를 길게 옮기지 마.
+- 서버가 "already_recorded"를 돌려주면 중복이니 그냥 넘어가.
+- 전부 끝나면 파일별 건수 표와 총계, 그리고 건너뛴 파일 목록을 출력해.
+```
+
+## 끝난 뒤
+
+- 웹 `/inbox` 에 초안으로 들어온다. 검토(확정·판정 수정·버림)는 웹에서 한다. 여기서 검토 시간도 잰다.
+- 이 기록들은 `source.client = claude-memory` 라서 `pit audit mcp` 의 재현율 계산에서 자동으로 빠진다
+  (인용문이 실제 발화가 아니라 메모 문장이기 때문).
+- 트윈 배지에는 "결정 N건 중 메모 출신 M건"을 표시한다 — 초기 이력이 "Claude가 기록한 나"에 편향돼 있음을 숨기지 않는다.
