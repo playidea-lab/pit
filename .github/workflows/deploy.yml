@@ -1,10 +1,9 @@
-# main 에 병합되면 Fly.io 에 배포한다.
+# Fly.io 배포. secrets(FLY_API_TOKEN, NEXT_PUBLIC_*)가 등록되기 전까지는 수동 트리거만 쓴다.
 # 필요한 GitHub Secrets: FLY_API_TOKEN, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_PITHUB_MCP_URL
 name: deploy
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: deploy
