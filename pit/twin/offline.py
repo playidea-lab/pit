@@ -165,3 +165,23 @@ def evaluate(items: list[Item], judges: dict[str, Judge], baseline: str = "prior
 
 def _unpack(prediction: Prediction) -> tuple[str, float]:
     return prediction.label, prediction.confidence
+
+
+JEV_HISTORY_K = 8
+
+
+def make_jev_judge(api_key: str, post: Callable[[str, dict[str, str], dict[str, object]], dict[str, object]]) -> Judge:
+    """JEV 판정기: 가장 비슷한 과거 판단 K건과 새 제안을 보여 주고 승인·수정·거부를 고르게 한다.
+    post(url, headers, body) -> 응답 JSON — 전송은 호출자가 준다(테스트는 가짜, CLI는 httpx)."""
+    from pit.server.jev import JEV_ENDPOINT, JevError, build_request, parse_response
+
+    def judge(train: list[Item], item: Item) -> Prediction:
+        ranked = sorted(train, key=lambda past: proposal_similarity(item.text, past.text), reverse=True)[:JEV_HISTORY_K]
+        history = [("", past.text, past.label) for past in ranked]
+        try:
+            verdict = parse_response(post(JEV_ENDPOINT, {"Authorization": f"Bearer {api_key}"}, build_request(history, "", item.text)))
+        except JevError:
+            return Prediction(prior_judge(train, item).label, 0.0)
+        return Prediction(verdict.label, verdict.confidence)
+
+    return judge

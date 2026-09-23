@@ -74,3 +74,21 @@ def test_cross_project_control_ignores_neighbors_from_the_same_project():
     query = Item(id="q", decided_at=START, text="캐시 계층 추가", label="reject", project="borch")
 
     assert knn_other_projects_judge([same, other], query).label == "approve"
+
+
+def test_jev_judge_shows_nearest_history_and_falls_back_on_bad_answer():
+    from pit.twin.offline import Item, make_jev_judge
+
+    train = [Item(id=str(i), decided_at=START, text=f"캐시 계층 {i}", label="reject") for i in range(12)]
+    sent: list[dict] = []
+
+    def post(url, headers, body):  # noqa: ANN001, ANN202
+        sent.append(body)
+        return {"answers": {"verdict": {"choice": "modify", "confidence": 0.7}}}
+
+    prediction = make_jev_judge("k", post)(train, Item(id="q", decided_at=START, text="캐시 계층", label="reject"))
+
+    assert (prediction.label, prediction.confidence) == ("modify", 0.7)
+    assert len(sent[0]["state"]["earlier_judgments"]) == 8
+    broken = make_jev_judge("k", lambda *_: {"answers": {}})(train, train[0])
+    assert (broken.label, broken.confidence) == ("reject", 0.0)
