@@ -30,7 +30,7 @@ from pit.server.routing import TeamConnectorMiddleware
 from pit.server.settings import AUTH_SUPABASE, GITHUB_SCOPES, ServerSettings
 from pit.server.tokencache import CachedTokenVerifier
 from pit.server.tools import DEFAULT_SEARCH_LIMIT, DecisionTools, ToolFailure
-from pit.server.twin import TwinService, TwinUnavailable
+from pit.server.twin import TWIN_ASKS_PER_HOUR, TwinService, TwinUnavailable
 
 SERVER_NAME = "pithub"
 # Supabase 프로젝트의 JWT 서명 (JWKS 로 확인: ES256 비대칭 키)
@@ -84,6 +84,12 @@ company's record. Searches include the team's visible decisions by default. Resu
 say whose they are when you rely on them ("last month <by> rejected the same approach"). Team principles
 rank first. You never see a teammate's private records or their team records still inside the 3-day window. Pass `scope` to search only your
 own (`mine`) or a specific team (`team:<slug>`).
+
+Asking a teammate's twin (`ask_twin`, when available): use it when you are about to act on something another
+person on the team owns or decided — "would <login> accept this?" — instead of guessing or stopping to ask them.
+Pass the topic names you saw in search results as `about`. The answer is a prediction with evidence, never their
+decision: say "<login> would likely …, based on <date> …". If it abstains, it has asked them; tell the user so and
+move on. Ask at most once per question; do not re-ask with different wording.
 """
 
 STORAGE_NOT_READY = "pithub 저장소가 아직 준비되지 않았습니다. 기록은 저장되지 않았습니다."
@@ -233,7 +239,9 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
 
     if settings.twin_enabled and repository is not None:
         jev = JevJudge(settings.jev_api_key) if settings.jev_api_key else None
-        _register_twin(server, TwinService(repository, lambda: datetime.now(timezone.utc), jev), _caller)
+        twin_limiter = RateLimiter(time.monotonic, max_calls=TWIN_ASKS_PER_HOUR)
+        service = TwinService(repository, lambda: datetime.now(timezone.utc), jev, twin_limiter)
+        _register_twin(server, service, _caller)
 
     if repository is not None:
         api = LocalApi(repository)
@@ -262,9 +270,10 @@ def _register_twin(server: FastMCP, twin: TwinService, _caller: Callable[[], Awa
         login: Annotated[str, Field(description="GitHub login of the teammate whose judgment you want to anticipate.")],
         proposal: Annotated[str, Field(description="The proposal they would be judging, in 1-2 neutral sentences.")],
         situation: Annotated[str, Field(description="What is being worked on, 1 sentence.")] = "",
+        about: Annotated[list[str] | None, Field(description="Topic names this is about, as seen in search results `topics`.")] = None,
     ) -> dict[str, object]:
         """Ask how a teammate would likely judge a proposal, from their visible past decisions. Returns a prediction with confidence and evidence, or abstains and asks them. It is a prediction, never their decision."""
         try:
-            return await _run(twin.ask(await _caller(), login, proposal, situation))
+            return await _run(twin.ask(await _caller(), login, proposal, situation, about))
         except TwinUnavailable as e:
             raise ToolError(str(e)) from e

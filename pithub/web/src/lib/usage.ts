@@ -16,6 +16,8 @@ export interface UsageSummary {
   returned: number;
   used: number;
   records: number;
+  /** 기록 중 주제·프로젝트·산출물 노드가 하나라도 붙은 것 — 그래프가 실제로 쌓이는지 (그래프 E) */
+  withTopics: number;
   /** 클라이언트별 (검색 횟수, 기록 건수) */
   byClient: { client: string; searches: number; records: number }[];
 }
@@ -40,7 +42,7 @@ export async function usageSummary(supabase: SupabaseClient, days = USAGE_WINDOW
   const since = new Date(Date.now() - days * MS_PER_DAY).toISOString();
   const [{ data: citations, error: cErr }, { data: recorded, error: rErr }] = await Promise.all([
     supabase.from("citations").select("returned_ids, client, created_at").gte("created_at", since),
-    supabase.from("decisions").select("source").gte("created_at", since).neq("status", "discarded"),
+    supabase.from("decisions").select("id, source, decision_nodes(count)").gte("created_at", since).neq("status", "discarded"),
   ]);
   if (cErr) fail("usageSummary.citations", cErr);
   if (rErr) fail("usageSummary.decisions", rErr);
@@ -73,6 +75,7 @@ export async function usageSummary(supabase: SupabaseClient, days = USAGE_WINDOW
     returned,
     used,
     records: (recorded ?? []).length,
+    withTopics: (recorded ?? []).filter((r) => ((r.decision_nodes as unknown as { count: number }[] | null)?.[0]?.count ?? 0) > 0).length,
     byClient: [...byClient.entries()].map(([client, v]) => ({ client, ...v })).sort((a, b) => b.records - a.records),
   };
 }

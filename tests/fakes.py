@@ -256,3 +256,11 @@ class InMemoryRepository:
 
     async def account_for_user(self, user_id: str):  # noqa: ANN201
         return getattr(self, "users", {}).get(user_id)
+
+    async def node_refs_of(self, decision_ids: list[str]) -> dict:
+        kinds = {node_id: (key[2], name) for key, (node_id, name) in getattr(self, "nodes", {}).items()}
+        refs: dict = {}
+        for decision_id, node_id in sorted(getattr(self, "decision_nodes", set())):
+            if decision_id in decision_ids:
+                refs.setdefault(decision_id, []).append(kinds[node_id])
+        return refs

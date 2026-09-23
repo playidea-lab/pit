@@ -48,10 +48,10 @@ function fail(where: string, error: { message: string } | null): never {
   throw new Error(`${where}: ${error?.message ?? "unknown error"}`);
 }
 
-export async function getNode(supabase: SupabaseClient, id: string): Promise<GraphNode | null> {
-  const { data, error } = await supabase.from("nodes").select("id, kind, name, team_id").eq("id", id).maybeSingle();
+export async function getNode(supabase: SupabaseClient, id: string): Promise<(GraphNode & { aliases: string[] }) | null> {
+  const { data, error } = await supabase.from("nodes").select("id, kind, name, team_id, aliases").eq("id", id).maybeSingle();
   if (error) fail("getNode", error);
-  return (data as GraphNode | null) ?? null;
+  return (data as (GraphNode & { aliases: string[] }) | null) ?? null;
 }
 
 /** 결정 id 들을 본문과 함께 — 내 것과 팀에 보인 남의 것을 합친다 */
@@ -168,4 +168,46 @@ export async function listMergeCandidates(supabase: SupabaseClient): Promise<Mer
   const { data, error } = await supabase.rpc("node_merge_candidates", { max_pairs: MERGE_LIST_LIMIT });
   if (error) fail("listMergeCandidates", error);
   return (data ?? []) as MergeCandidate[];
+}
+
+export interface TopicSummary extends GraphNode {
+  aliases: string[];
+  uses: number;
+}
+
+const TOPIC_LIST_LIMIT = 200;
+
+/** 내가 볼 수 있는 노드와 매달린 (볼 수 있는) 결정 수 — RLS가 노드와 엣지를 모두 거른다 (그래프 D) */
+export async function listTopics(supabase: SupabaseClient, teamId?: string): Promise<TopicSummary[]> {
+  let query = supabase
+    .from("nodes")
+    .select("id, kind, name, team_id, aliases, decision_nodes(count)")
+    .is("merged_into", null)
+    .limit(TOPIC_LIST_LIMIT);
+  if (teamId) query = query.eq("team_id", teamId);
+  const { data, error } = await query;
+  if (error) fail("listTopics", error);
+  return (data ?? [])
+    .map((row) => {
+      const counted = row.decision_nodes as unknown as { count: number }[] | null;
+      return {
+        id: row.id as string,
+        kind: row.kind as NodeKind,
+        name: row.name as string,
+        team_id: row.team_id as string | null,
+        aliases: (row.aliases as string[] | null) ?? [],
+        uses: counted?.[0]?.count ?? 0,
+      };
+    })
+    .filter((t) => t.uses > 0)
+    .sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name));
+}
+
+/** 같은 이름 공간·같은 종류의 다른 노드 — "다른 주제에 합치기"의 후보 */
+export async function siblingTopics(supabase: SupabaseClient, node: GraphNode & { owner_github_id?: number | null }): Promise<GraphNode[]> {
+  let query = supabase.from("nodes").select("id, kind, name, team_id").is("merged_into", null).eq("kind", node.kind).neq("id", node.id);
+  query = node.team_id ? query.eq("team_id", node.team_id) : query.is("team_id", null);
+  const { data, error } = await query.order("name").limit(TOPIC_LIST_LIMIT);
+  if (error) fail("siblingTopics", error);
+  return (data ?? []) as GraphNode[];
 }

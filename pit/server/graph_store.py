@@ -192,3 +192,15 @@ class SupabaseGraphMixin:
         if not hasattr(self, "_account_cache"):
             self._account_cache: dict[str, tuple[int, str]] = {}
         return self._account_cache
+
+    async def node_refs_of(self, decision_ids: list[str]) -> dict[str, list[tuple[str, str]]]:
+        if not decision_ids:
+            return {}
+        params = {"decision_id": _quoted_in(decision_ids), "select": "decision_id,nodes(kind,name)"}
+        rows = (await self._request("GET", "/decision_nodes", params=params)).json()
+        refs: dict[str, list[tuple[str, str]]] = {}
+        for row in rows:
+            node = row.get("nodes") or {}
+            if node.get("name"):
+                refs.setdefault(str(row["decision_id"]), []).append((str(node["kind"]), str(node["name"])))
+        return refs

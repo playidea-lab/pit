@@ -14,6 +14,7 @@ import type { Verdict } from "@/lib/decisions";
 const VERDICTS: readonly Verdict[] = ["approve", "modify", "reject"];
 const EDITABLE_TEXT_FIELDS = ["situation", "proposal", "rationale", "human_quote"] as const;
 const MAX_TEXT_CHARS = 4000;
+const MAX_TOPIC_NAME_CHARS = 120;
 
 function text(form: FormData, name: string): string {
   return String(form.get(name) ?? "").trim();
@@ -166,4 +167,27 @@ export async function rateTwinAnswer(form: FormData): Promise<void> {
   const { error } = await supabase.rpc("rate_twin_answer", { consult_id: Number(form.get("consult_id")), verdict });
   if (error) throw new Error(`채점 실패: ${error.message}`);
   revalidatePath("/twin");
+}
+
+/** 주제에 다른 이름 붙이기 — 언어가 다른 같은 뜻을 한 주제로 (그래프 C) */
+export async function addTopicAlias(form: FormData): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+  const node = text(form, "node_id");
+  const alias = text(form, "alias").slice(0, MAX_TOPIC_NAME_CHARS);
+  if (!alias) return;
+  const { error } = await supabase.rpc("add_node_alias", { node, alias });
+  if (error) throw new Error(`다른 이름 추가 실패: ${error.message}`);
+  revalidatePath(`/topic/${node}`);
+}
+
+/** 이 주제를 다른 주제에 합치기 — 이 주제의 결정이 모두 옮겨가고, 이 이름은 별칭이 된다 */
+export async function mergeTopicInto(form: FormData): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+  const drop = text(form, "node_id");
+  const keep = text(form, "into");
+  if (!keep) return;
+  const { error } = await supabase.rpc("merge_nodes", { keep, drop_node: drop });
+  if (error) throw new Error(`합치기 실패: ${error.message}`);
+  revalidatePath("/topics");
+  redirect(`/topic/${keep}`);
 }

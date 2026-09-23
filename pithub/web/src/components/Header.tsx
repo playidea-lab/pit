@@ -11,6 +11,7 @@ interface HeaderProps {
 const NAV = [
   { href: "/inbox", label: "정리함" },
   { href: "/decisions", label: "내 결정" },
+  { href: "/topics", label: "주제" },
   { href: "/teams", label: "팀" },
   { href: "/twin", label: "내 트윈" },
   { href: "/connect", label: "연결" },

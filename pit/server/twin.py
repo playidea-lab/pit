@@ -16,8 +16,10 @@ from pit.server.conflicts import proposal_similarity
 from pit.server.graph import readable_for
 from pit.server.identity import Caller
 from pit.server.jev import JevError, JevJudge
+from pit.server.ratelimit import RateLimiter
 from pit.server.records import SUMMARY_CHARS, StoredDecision, redact_text
 from pit.server.repository import DecisionRepository
+from pit.server.twin_graph import BASIS_GRAPH, BASIS_TEXT, graph_evidence
 from pit.twin.offline import Item, knn_judge
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,8 @@ JUDGE_JEV, JUDGE_KNN = "jev", "knn"
 # 띄워 둔 그림자 판정 — 참조를 잡아 두지 않으면 끝나기 전에 수거될 수 있다
 _SHADOW_TASKS: set[asyncio.Task[None]] = set()
 MAX_QUESTION_CHARS = 1000
+# 한 사람이 한 시간에 트윈에게 물을 수 있는 횟수
+TWIN_ASKS_PER_HOUR = 60
 
 
 class TwinUnavailable(Exception):
@@ -45,8 +49,14 @@ class TwinService:
     now: Callable[[], datetime]
     # 선택 판정기. 동의한 팀의 결정으로만 부른다 (D-0009 §7). 없거나 실패하면 kNN.
     jev: JevJudge | None = None
+    # 묻는 사람별 빈도 제한 — 폭주하는 에이전트가 JEV 비용과 자문 기록을 끝없이 늘리지 못하게
+    limiter: RateLimiter | None = None
 
-    async def ask(self, caller: Caller, login: str, proposal: str, situation: str = "") -> dict[str, object]:
+    async def ask(
+        self, caller: Caller, login: str, proposal: str, situation: str = "", about: list[str] | None = None
+    ) -> dict[str, object]:
+        if self.limiter is not None and not self.limiter.allow(caller.github_id):
+            raise TwinUnavailable("트윈에게 너무 자주 묻고 있습니다. 잠시 뒤에 다시 물으세요.")
         proposal, situation = redact_text(proposal[:MAX_QUESTION_CHARS]), redact_text(situation[:MAX_QUESTION_CHARS])
         found = await self.repository.find_account(login)
         if found is None:
@@ -58,6 +68,10 @@ class TwinService:
         readable = readable_for(caller.github_id, teams, self.now())
         pool = [d for d in await self.repository.team_decisions_of(twin_id, list(teams), TWIN_POOL_LIMIT) if readable(d)]
         query = f"{situation} {proposal}"
+        # 근거는 그래프가 먼저: 질문의 주제에 매달린 그 사람의 결정 + 한 단계 이어진 결정 (D-0009 §8)
+        graph_pool, matched = await graph_evidence(self.repository, pool, query, about or [])
+        basis = BASIS_GRAPH if graph_pool else BASIS_TEXT
+        pool = graph_pool or pool
         evidence = sorted(pool, key=lambda d: proposal_similarity(query, f"{d.situation} {d.proposal}"), reverse=True)
         # 답은 무료 kNN이 한다 (오프라인 시험: kNN 0.456 > JEV 0.389). JEV는 그림자로만 (2026-09-24 사용자 결정).
         prediction, confidence = self._knn(pool, query)
@@ -70,7 +84,8 @@ class TwinService:
         self._start_shadow(consult_id, evidence, situation, proposal)
         await self._follow_up(caller, twin_id, departed, abstained, evidence, situation, proposal, confidence, teams)
         answer = _answer(login, departed, None if abstained else prediction, confidence, abstained, evidence)
-        return {**answer, "judge": JUDGE_KNN}
+        graph = {"basis": basis, "topics": matched} if matched else {"basis": basis}
+        return {**answer, "judge": JUDGE_KNN, **graph}
 
     def _knn(self, pool: list[StoredDecision], query: str) -> tuple[str | None, float]:
         items = [Item(id=d.id, decided_at=d.decided_at, text=f"{d.situation} {d.proposal}", label=d.verdict)

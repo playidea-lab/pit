@@ -61,6 +61,10 @@ export default async function SettingsPage() {
             <Stat label="돌려준 결과" value={`${usage.returned}건`} />
             <Stat label="실제로 읽힘" value={usedPct === null ? "-" : `${usage.used}건 · ${usedPct}%`} />
             <Stat label="기록" value={`${usage.records}건`} />
+            <Stat
+              label="주제가 붙은 기록"
+              value={usage.records === 0 ? "-" : `${usage.withTopics}건 · ${Math.round((usage.withTopics / usage.records) * 100)}%`}
+            />
           </div>
           {usage.byClient.length > 0 && (
             <ul className="faint text-xs">

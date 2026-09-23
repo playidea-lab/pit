@@ -98,6 +98,10 @@ class DecisionRepository(Protocol):
         """결정별로 매달린 노드 이름"""
         ...
 
+    async def node_refs_of(self, decision_ids: list[str]) -> dict[str, list[tuple[str, str]]]:
+        """결정별로 매달린 노드 (종류, 이름) — 트윈이 근거를 그래프로 모을 때 쓴다"""
+        ...
+
     async def find_nodes(self, team_ids: list[str], owner_github_id: int, norm_query: str, limit: int) -> list[str]:
         """이름 공간(속한 팀들 + 본인)에서 이름·별칭이 질의를 포함하는 살아 있는 노드 id (G4)"""
         ...

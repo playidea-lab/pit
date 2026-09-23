@@ -169,3 +169,80 @@ def test_jev_response_with_unknown_choice_is_rejected():
 
     with pytest.raises(JevError):
         parse_response({"answers": {"verdict": {"choice": "maybe", "confidence": 1.0}}})
+
+
+
+def test_asking_the_twin_too_often_is_refused():
+    from pit.server.ratelimit import RateLimiter
+    from tests.fakes import FakeClock
+
+    repository = _repository([_decision(1, "캐시를 쓴다", "reject")])
+    service = TwinService(repository, lambda: NOW, None, RateLimiter(FakeClock(), max_calls=2))
+
+    asyncio.run(service.ask(ALICE, "bob", "캐시"))
+    asyncio.run(service.ask(ALICE, "bob", "캐시"))
+    with pytest.raises(TwinUnavailable, match="너무 자주"):
+        asyncio.run(service.ask(ALICE, "bob", "캐시"))
+
+
+def test_server_instructions_tell_the_model_when_to_ask_a_twin():
+    from pit.server.app import SERVER_INSTRUCTIONS
+
+    assert "ask_twin" in SERVER_INSTRUCTIONS and "never their" in SERVER_INSTRUCTIONS
+
+
+
+# --- 그래프 B: 트윈의 근거는 그래프가 먼저 --------------------------------------------
+
+
+def _attach(repository: InMemoryRepository, decision_id: str, kind: str, name: str) -> None:
+    from pit.server.graph import normalize_node_name
+
+    repository.nodes = getattr(repository, "nodes", {})
+    key = (TEAM, None, kind, normalize_node_name(name))
+    repository.nodes.setdefault(key, (f"N{len(repository.nodes) + 1}", name))
+    repository.decision_nodes = getattr(repository, "decision_nodes", set()) | {(decision_id, repository.nodes[key][0])}
+
+
+def test_twin_takes_evidence_from_the_topic_even_when_the_words_differ():
+    """질문이 주제를 가리키면, 글자가 달라도 그 주제에 매달린 판단이 근거다 — 글자만 비슷한 다른 판단은 아니다"""
+    rows = [
+        _decision(1, "데이터를 시간 순으로 나눈다", "approve"),
+        _decision(2, "섞어서 나누는 방식은 쓰지 않는다", "approve"),
+        _decision(3, "평가 대시보드 색을 바꾼다", "reject"),
+        _decision(4, "평가 대시보드 글꼴을 바꾼다", "reject"),
+    ]
+    repository = _repository(rows)
+    for decision_id in ("PD-1", "PD-2"):
+        _attach(repository, decision_id, "topic", "평가 분할")
+    _attach(repository, "PD-3", "topic", "대시보드")
+
+    answer = asyncio.run(TwinService(repository, lambda: NOW).ask(ALICE, "bob", "평가 분할을 시간 순으로", "평가", ["평가 분할"]))
+
+    assert (answer["basis"], answer["topics"]) == ("graph", ["평가 분할"])
+    assert {e["id"] for e in answer["evidence"]} == {"PD-1", "PD-2"}
+
+
+def test_topic_named_in_the_question_is_found_without_about_and_topics_beat_projects():
+    rows = [_decision(1, "캐시를 쓴다", "reject"), _decision(2, "캐시를 안 쓴다", "approve")]
+    repository = _repository(rows)
+    _attach(repository, "PD-1", "project", "borch")
+    _attach(repository, "PD-2", "project", "borch")
+    _attach(repository, "PD-1", "topic", "캐시 전략")
+
+    answer = asyncio.run(TwinService(repository, lambda: NOW).ask(ALICE, "bob", "borch 의 캐시 전략을 바꾸자"))
+
+    assert answer["topics"] == ["캐시 전략"] and [e["id"] for e in answer["evidence"]] == ["PD-1"]
+
+
+def test_linked_decision_joins_the_evidence_and_no_graph_falls_back_to_text():
+    rows = [_decision(1, "시계열 예측으로 간다", "approve"), _decision(2, "평가는 시간 분할", "approve"), _decision(3, "무관한 결정", "reject")]
+    repository = _repository(rows)
+    _attach(repository, "PD-2", "topic", "평가 분할")
+    repository.links = {("PD-2", "PD-1", "depends_on", "confirmed")}
+
+    linked = asyncio.run(TwinService(repository, lambda: NOW).ask(ALICE, "bob", "평가 분할 바꾸자"))
+    plain = asyncio.run(TwinService(repository, lambda: NOW).ask(ALICE, "bob", "전혀 다른 이야기"))
+
+    assert {e["id"] for e in linked["evidence"]} == {"PD-1", "PD-2"} and linked["basis"] == "graph"
+    assert plain["basis"] == "text" and "topics" not in plain

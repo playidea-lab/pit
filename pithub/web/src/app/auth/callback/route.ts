@@ -39,5 +39,10 @@ export async function GET(request: Request) {
   if (error) {
     return NextResponse.redirect(`${origin}/?error=auth_callback_error`);
   }
+  // 계정 보장: 지웠다가 다시 온 사람도 계정이 이어지게 (트리거는 첫 가입 때만 돈다)
+  const { error: accountError } = await supabase.rpc("ensure_my_account");
+  if (accountError) {
+    return NextResponse.redirect(`${origin}/?error=account_setup_failed`);
+  }
   return NextResponse.redirect(`${origin}${next}`);
 }

@@ -6,6 +6,7 @@ import CopyBox from "@/components/CopyBox";
 import DecisionCard from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import { getMyAccount } from "@/lib/decisions";
+import { listTopics } from "@/lib/graph";
 import { siteOrigin } from "@/lib/origin";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 import {
@@ -34,6 +35,7 @@ export const dynamic = "force-dynamic";
 
 const MCP_URL_ENV = "NEXT_PUBLIC_PITHUB_MCP_URL";
 const RECENT_SIZE = 20;
+const TOP_TOPICS = 12;
 // team-actions.ts 의 createInvite 가 쓰는 한 번짜리 쿠키
 const INVITE_COOKIE = "pithub_new_invite";
 
@@ -168,6 +170,7 @@ export default async function TeamPage({ params }: PageProps) {
     listTeamDecisions(supabase, team.id),
     weeklyTransferCount(supabase, team.id, requestTime()),
   ]);
+  const topics = (await listTopics(supabase, team.id)).slice(0, TOP_TOPICS);
   const me = members.find((m) => m.github_id === account.github_id);
   if (!me?.accepted_at) redirect("/teams");
   const isOwner = me.role === "owner";
@@ -199,6 +202,24 @@ export default async function TeamPage({ params }: PageProps) {
 
         {isOwner && <InviteCard team={team} inviteUrl={inviteUrl} />}
         <AddressCard team={team} url={mcpUrl} teamUrl={url} />
+
+        {topics.length > 0 && (
+          <div>
+            <div className="mb-3 flex items-baseline gap-3">
+              <h2 className="text-[15px] font-semibold text-ink">주요 주제</h2>
+              <Link href="/topics" className="link text-xs">
+                전체
+              </Link>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {topics.map((t) => (
+                <Link key={t.id} href={`/topic/${t.id}`} className="badge badge-choice hover:opacity-80">
+                  {t.name} · {t.uses}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         {principles.length > 0 && (
           <div>

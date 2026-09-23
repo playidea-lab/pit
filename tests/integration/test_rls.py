@@ -955,3 +955,85 @@ def test_email_member_works_like_any_member_in_teams_and_records(db):
 
     with acting_as(db, "authenticated", alice):
         assert db.execute("select id, github_login from public.team_decisions").fetchall() == [("PD-bob", "bob")]
+
+
+# --- 재가입: 로그인할 때마다 계정 보장 ------------------------------------------------
+
+
+def test_github_user_who_deleted_the_account_is_revived_on_next_login(db):
+    team = _team(db, "pilab", BOB_GITHUB_ID)
+    _join(db, team, ALICE_GITHUB_ID)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-shared", team, age_days=4)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.delete_my_account()")
+        assert db.execute("select public.current_github_id()").fetchone()[0] is None
+
+    with acting_as(db, "authenticated", alice):
+        assert db.execute("select public.ensure_my_account()").fetchone()[0] == ALICE_GITHUB_ID
+        assert db.execute("select public.current_github_id()").fetchone()[0] == ALICE_GITHUB_ID
+    assert db.execute("select deleted_at from public.accounts where github_id = %s", (ALICE_GITHUB_ID,)).fetchone()[0] is None
+
+
+def test_ensure_my_account_is_a_no_op_for_a_linked_user_and_creates_for_an_orphaned_email_user(db):
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_email(db, "bob@corp.example")
+    db.execute("delete from public.profiles where github_id < 0")
+
+    with acting_as(db, "authenticated", alice):
+        assert db.execute("select public.ensure_my_account()").fetchone()[0] == ALICE_GITHUB_ID
+    with acting_as(db, "authenticated", bob):
+        created = db.execute("select public.ensure_my_account()").fetchone()[0]
+        assert created < 0 and db.execute("select public.current_github_id()").fetchone()[0] == created
+
+
+# --- 그래프 A: 기존 결정의 프로젝트 노드 ---------------------------------------------
+
+
+def test_sql_and_server_normalize_node_names_the_same_way(db):
+    from pit.server.graph import normalize_node_name
+
+    samples = ["  Eval  Split ", "ＡＢＣ 캐시", 'a,(b){c}"d\\e*%', "평가 분할", "borch-fed", "Train/Test Split"]
+    for sample in samples:
+        assert db.execute("select public.normalize_node_name(%s)", (sample,)).fetchone()[0] == normalize_node_name(sample), sample
+
+
+def test_attach_node_by_name_reuses_nodes_per_namespace_and_follows_aliases(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-1")
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-2")
+    _team_draft(db, ALICE_GITHUB_ID, "PD-t", team, age_days=4)
+
+    a = db.execute("select public.attach_node_by_name('PD-1', 'project', 'Borch')").fetchone()[0]
+    b = db.execute("select public.attach_node_by_name('PD-2', 'project', ' borch ')").fetchone()[0]
+    t = db.execute("select public.attach_node_by_name('PD-t', 'project', 'borch')").fetchone()[0]
+    db.execute("update public.nodes set aliases = '{브라우저 토치}' where id = %s", (a,))
+    c = db.execute("select public.attach_node_by_name('PD-2', 'project', '브라우저 토치')").fetchone()[0]
+
+    assert a == b == c and t != a  # 개인 이름 공간 하나, 팀 이름 공간은 따로
+    assert db.execute("select count(*) from public.decision_nodes").fetchone()[0] == 3
+
+
+# --- 그래프 C: 다른 이름 붙이기 ------------------------------------------------------
+
+
+def test_alias_routes_later_names_to_the_topic_and_refuses_a_name_another_topic_owns(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-1", team, age_days=4)
+    _team_draft(db, BOB_GITHUB_ID, "PD-2", team, age_days=4)
+    split = _node(db, "평가 분할", team=team)
+    cache = _node(db, "cache", team=team)
+    _about(db, "PD-1", split)
+    _about(db, "PD-2", cache)
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    outsider = sign_in_with_github(db, 3003, "carol")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", outsider):
+        db.execute("select public.add_node_alias(%s, 'Train/Test Split')", (split,))
+    with acting_as(db, "authenticated", bob):
+        db.execute("select public.add_node_alias(%s, 'Train/Test Split')", (split,))
+    with pytest.raises(psycopg.errors.UniqueViolation), acting_as(db, "authenticated", bob):
+        db.execute("select public.add_node_alias(%s, 'Cache')", (split,))
+
+    assert db.execute("select public.attach_node_by_name('PD-2', 'topic', 'train/test split')::text").fetchone()[0] == split
