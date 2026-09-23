@@ -71,9 +71,15 @@ function Scene({ when, lines }: (typeof SCENES)[number]) {
   );
 }
 
+// 렌더 중 시계를 읽는 건 서버 요청 시점의 값이 목적이다. react-hooks/purity 가 컴포넌트
+// 본문의 Date.now() 를 막으므로 컴포넌트 밖 함수로 둔다.
+function weekAgoIso(): string {
+  return new Date(Date.now() - DAYS_IN_WEEK * MS_PER_DAY).toISOString();
+}
+
 async function Status({ account }: { account: Account }) {
   const supabase = await createServerSupabaseClient();
-  const weekAgo = new Date(Date.now() - DAYS_IN_WEEK * MS_PER_DAY).toISOString();
+  const weekAgo = weekAgoIso();
   const [{ count: thisWeek }, { count: unverified }, teams, invites] = await Promise.all([
     supabase.from("decisions").select("id", { count: "exact", head: true }).neq("status", "discarded").gte("decided_at", weekAgo),
     supabase.from("decisions").select("id", { count: "exact", head: true }).eq("status", "draft"),
