@@ -51,9 +51,9 @@ decision_links   (from_decision → to_decision, relation[supersedes|conflicts_w
 
 | 단계 | 산출물 | 완료 기준 | 예상 |
 |---|---|---|---|
-| **G0 계측** | `transfers`. 남의 결정을 `get_decision` 하는 순간 기록. `/t/<slug>`에 "이번 주 건너간 판단" | 남의 결정 읽기 → 한 행, 본인 것 읽기 → 없음 (테스트) | 1일 |
-| **G1 스키마** | `nodes`·`decision_nodes`·`decision_links` + RLS, `supersedes` 이관 | 팀원은 팀에 보인 결정의 노드·엣지만 본다 (RLS) | 1~2일 |
-| **G2 쓰기** | `record_decision.about`·`links`, 이름 정규화 → 기존 노드에 붙이거나 생성, 검색 결과에 주제 id, push 같은 규약 | 두 세션이 같은 주제를 기록하면 노드 하나 | 2일 |
+| **G0 계측** ✅ 9c92ed3 | `transfers`. 남의 결정을 `get_decision` 하는 순간 기록. `/t/<slug>`에 "이번 주 건너간 판단" | 남의 결정 읽기 → 한 행, 본인 것 읽기 → 없음 (테스트) | 1일 |
+| **G1 스키마** ✅ c901d24 | `nodes`·`decision_nodes`·`decision_links` + RLS, `supersedes` 이관 | 팀원은 팀에 보인 결정의 노드·엣지만 본다 (RLS) | 1~2일 |
+| **G2 쓰기** ✅ MCP (push 규약은 남음) | `record_decision.about`·`links`, 이름 정규화 → 기존 노드에 붙이거나 생성, 검색 결과에 주제 이름(`topics`), push 같은 규약 | 두 세션이 같은 주제를 기록하면 노드 하나 | 2일 |
 | **G3 이름 맞추기** | trigram 후보 → 정리함 "같은 주제입니까?" → `merged_into` | 병합 뒤 두 이름 모두 같은 결정 | 2일 |
 | **G4 그래프 읽기** | 주제 1-hop 확장 검색, `/topic/<id>`, `get_decision` 에 연결 결정 | claude.ai에서 주제로 물으면 개발자 판단이 근거로 | 2~3일 |
 | **G5 충돌** | 같은 주제 반대 판정 → `conflicts_with` 후보 → 정리함 확인 | 기획·개발의 상반된 결정이 정리함에 | 2일 |

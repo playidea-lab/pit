@@ -360,7 +360,7 @@ def test_record_decision_same_proposal_within_days_is_folded_into_repeat():
 
     second = _run(tools.record_decision(ALICE, _arguments(project="pit", proposal="매번  전체를 다시 읽는다", human_quote="또 거부")))
 
-    assert second == {"id": first["id"], "status": "repeated", "redacted": 0}
+    assert second == {"id": first["id"], "status": "repeated", "redacted": 0, "topics": ["pit"]}
     assert len(repository.rows) == 1 and repository.rows[0].repeat_count == 2
 
 
@@ -740,3 +740,59 @@ def test_failed_read_of_unshared_decision_records_no_transfer():
         _run(tools.get_decision(ALICE, bobs))
 
     assert getattr(repository, "transfers", []) == []
+
+
+
+# --- G2: 판단 그래프 쓰기 --------------------------------------------------------
+
+
+def test_normalize_node_name_folds_case_width_space_and_filter_syntax():
+    from pit.server.graph import normalize_node_name
+
+    assert normalize_node_name("  Eval  Split ") == normalize_node_name("eval split") == "eval split"
+    assert normalize_node_name("ＡＢＣ") == "abc"
+    assert normalize_node_name('a,(b){c}"d\\e*%') == "a b c d e"
+
+
+def test_same_topic_from_two_teammates_lands_on_one_team_node_and_shows_in_search():
+    repository = _team_repository()
+    tools = _tools(repository)
+    first = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(proposal="캐시 A", about=[{"name": "Eval Split"}])))
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="캐시 B", about=[{"name": "eval  split"}])))
+
+    assert first["topics"] == ["Eval Split"]
+    team_nodes = [key for key in repository.nodes if key[0] == TEAM_ID]
+    assert team_nodes == [(TEAM_ID, None, "topic", "eval split")]
+    found = _run(tools.search_my_decisions(ALICE_IN_PILAB, "캐시", scope="mine"))
+    assert found[0]["topics"] == ["Eval Split"]
+
+
+def test_private_decision_nodes_live_in_the_owners_namespace_and_project_becomes_a_node():
+    repository = InMemoryRepository()
+    _run(_tools(repository).record_decision(ALICE, _arguments(project="borch", about=[{"kind": "artifact", "name": "eval/split.py"}])))
+
+    assert sorted(repository.nodes) == [(None, 1001, "artifact", "eval/split.py"), (None, 1001, "project", "borch")]
+
+
+def test_links_only_to_readable_decisions_and_conflicts_are_only_proposed():
+    repository = _team_repository()
+    tools = _tools(repository)
+    shared = _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="밥 공유")))["id"]
+    private = _run(tools.record_decision(BOB, _arguments(proposal="밥 비공개")))["id"]
+    repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
+
+    result = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(proposal="앨리스", links=[
+        {"relation": "conflicts_with", "to": shared}, {"relation": "depends_on", "to": private},
+    ])))
+
+    assert result["links"] == 1 and result["links_skipped"] == [private]
+    assert {(to, rel, status) for _, to, rel, status in repository.links} == {(shared, "conflicts_with", "proposed")}
+
+
+def test_about_rejects_unknown_kind_and_too_many_nodes():
+    tools = _tools(_team_repository())
+
+    with pytest.raises(ToolFailure):
+        _run(tools.record_decision(ALICE, _arguments(about=[{"kind": "person", "name": "고객 A"}])))
+    with pytest.raises(ToolFailure):
+        _run(tools.record_decision(ALICE, _arguments(about=[{"name": f"t{i}"} for i in range(7)])))

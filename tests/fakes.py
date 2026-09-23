@@ -183,3 +183,26 @@ class InMemoryRepository:
 
     async def record_transfer(self, decision, reader_github_id: int, via: str, client) -> None:  # noqa: ANN001
         self.transfers = getattr(self, "transfers", []) + [(decision.id, decision.owner_github_id, reader_github_id, via, client)]
+
+    # --- 판단 그래프 (G2) ---
+
+    async def resolve_node(self, namespace, kind: str, name: str, norm: str, created_by: int) -> str:  # noqa: ANN001
+        self.nodes = getattr(self, "nodes", {})
+        key = (namespace.team_id, namespace.owner_github_id, kind, norm)
+        if key not in self.nodes:
+            self.nodes[key] = (f"N{len(self.nodes) + 1}", name)
+        return self.nodes[key][0]
+
+    async def attach_nodes(self, decision_id: str, node_ids: list[str]) -> None:
+        self.decision_nodes = getattr(self, "decision_nodes", set()) | {(decision_id, n) for n in node_ids}
+
+    async def add_links(self, from_decision: str, links: list, created_by: int) -> None:
+        self.links = getattr(self, "links", set()) | {(from_decision, to, rel, status) for to, rel, status in links}
+
+    async def topics_of(self, decision_ids: list[str]) -> dict[str, list[str]]:
+        names = {node_id: name for node_id, name in getattr(self, "nodes", {}).values()}
+        topics: dict[str, list[str]] = {}
+        for decision_id, node_id in sorted(getattr(self, "decision_nodes", set())):
+            if decision_id in decision_ids:
+                topics.setdefault(decision_id, []).append(names[node_id])
+        return topics

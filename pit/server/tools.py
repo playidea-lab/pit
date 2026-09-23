@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from pydantic import ValidationError
 
+from pit.server.graph import GraphWriter
 from pit.server.identity import Caller
 from pit.server.ratelimit import RateLimiter
 from pit.server.records import (
@@ -78,9 +79,11 @@ class DecisionTools:
         if repeated is not None and same_outcome and repeated.dedupe_key != decision.dedupe_key:
             await self.repository.bump_repeat(repeated.id)
             logger.info("반복 결정 접힘", extra={"decision_id": repeated.id})
-            return {"id": repeated.id, "status": "repeated", "redacted": 0}
+            graph = await self._attach_graph(caller, repeated, payload)
+            return {"id": repeated.id, "status": "repeated", "redacted": 0, **graph}
 
         created = await self.repository.insert_draft(decision)
+        graph = await self._attach_graph(caller, decision, payload)
 
         # 글의 내용은 로그에 남기지 않는다
         logger.info(
@@ -92,6 +95,7 @@ class DecisionTools:
             "status": "recorded" if created else "already_recorded",
             "redacted": sum(decision.redactions.values()),
             "visibility": decision.visibility,
+            **graph,
         }
         if decision.visibility == VISIBILITY_TEAM:
             result["note"] = (
@@ -104,6 +108,15 @@ class DecisionTools:
                 "그때까지는 본인만 봅니다."
             )
         return result
+
+    async def _attach_graph(self, caller: Caller, decision: StoredDecision, payload: RecordDecisionInput) -> dict[str, object]:
+        """결정을 그래프에 매단다. 링크는 호출자가 읽을 수 있는 결정만 가리킬 수 있다."""
+
+        async def can_link_to(decision_id: str) -> bool:
+            target = await self.repository.get_by_id(decision_id)
+            return target is not None and await self._can_read(caller, target)
+
+        return await GraphWriter(self.repository, can_link_to).attach(decision, payload)
 
     async def _apply_scope(self, caller: Caller, payload: RecordDecisionInput, decision: StoredDecision) -> StoredDecision:
         """팀 커넥터로 들어왔으면 팀 범위(주소가 힌트보다 세다), 아니면 프로젝트별 기본값, 없으면 private.
@@ -164,7 +177,11 @@ class DecisionTools:
             [d.owner_github_id for d in found if d.owner_github_id != caller.github_id]
         )
         await self.repository.record_search(caller.github_id, query, [d.id for d in found], client)
-        return [_summary(d, by=logins.get(d.owner_github_id), team=teams.get(d.team_id or "")) for d in found]
+        topics = await self.repository.topics_of([d.id for d in found])
+        return [
+            _summary(d, by=logins.get(d.owner_github_id), team=teams.get(d.team_id or ""), topics=topics.get(d.id))
+            for d in found
+        ]
 
     async def get_decision(self, caller: Caller, decision_id: str, client: str | None = None) -> dict[str, object]:
         decision = await self.repository.get_by_id(decision_id)
@@ -211,7 +228,9 @@ def _rank(found: list[StoredDecision]) -> list[StoredDecision]:
     return sorted(found, key=key, reverse=True)
 
 
-def _summary(decision: StoredDecision, by: str | None = None, team: str | None = None) -> dict[str, object]:
+def _summary(
+    decision: StoredDecision, by: str | None = None, team: str | None = None, topics: list[str] | None = None
+) -> dict[str, object]:
     summary: dict[str, object] = {
         "id": decision.id,
         "decided_at": decision.decided_at.date().isoformat(),
@@ -229,6 +248,9 @@ def _summary(decision: StoredDecision, by: str | None = None, team: str | None =
         summary["by"] = by
     if team is not None:
         summary["team"] = team
+    # 이 결정이 매달린 노드 이름 — 새 결정을 기록할 때 같은 이름을 다시 쓰게 한다
+    if topics:
+        summary["topics"] = topics
     return summary
 
 

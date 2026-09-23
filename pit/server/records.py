@@ -31,6 +31,27 @@ MAX_FUTURE_SKEW = timedelta(minutes=10)
 BACKFILL_CLIENTS = frozenset({"claude-memory", "backfill"})
 
 
+MAX_ABOUT = 6
+MAX_LINKS = 5
+MAX_NODE_NAME_CHARS = 120
+NODE_KINDS = ("topic", "project", "artifact")
+LINK_RELATIONS = ("depends_on", "conflicts_with")
+
+
+class NodeRef(BaseModel):
+    """이 결정이 무엇에 관한 것인가 — 주제·프로젝트·산출물 (G2)"""
+
+    kind: str = Field(default="topic", pattern="^(topic|project|artifact)$")
+    name: str = Field(min_length=1, max_length=MAX_NODE_NAME_CHARS)
+
+
+class LinkRef(BaseModel):
+    """이 결정과 다른 결정의 관계 (뒤집기는 supersedes 로 따로 받는다)"""
+
+    relation: str = Field(pattern="^(depends_on|conflicts_with)$")
+    to: str = Field(min_length=1, max_length=80)
+
+
 class RecordDecisionInput(BaseModel):
     """record_decision 도구의 입력"""
 
@@ -49,6 +70,9 @@ class RecordDecisionInput(BaseModel):
     supersedes: list[str] = Field(default_factory=list, max_length=MAX_SUPERSEDES)
     # 과거 결정을 옮길 때만 준다 (메모·문서 백필). 없으면 서버 시각.
     decided_at: datetime | None = None
+    # 판단 그래프 (G2): 이 결정이 매달리는 노드와 다른 결정과의 관계
+    about: list[NodeRef] = Field(default_factory=list, max_length=MAX_ABOUT)
+    links: list[LinkRef] = Field(default_factory=list, max_length=MAX_LINKS)
 
     @model_validator(mode="after")
     def _verdict_or_choice(self) -> "RecordDecisionInput":
