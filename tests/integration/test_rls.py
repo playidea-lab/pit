@@ -869,3 +869,46 @@ def test_only_the_twin_owner_can_rate_a_twin_answer(db):
     with acting_as(db, "authenticated", bob):
         db.execute("select public.rate_twin_answer(%s, 'reject')", (consult,))
     assert db.execute("select owner_verdict, rated_at is not null from public.consult_log").fetchone() == ("reject", True)
+
+
+# --- 초대 링크 --------------------------------------------------------------------
+
+
+def test_invite_link_joins_immediately_and_regenerating_or_expiry_kills_the_old_link(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    carol = sign_in_with_github(db, 3003, "carol")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", bob):
+        db.execute("select public.create_team_invite(%s)", (team,))
+    with acting_as(db, "authenticated", alice):
+        old = db.execute("select public.create_team_invite(%s)", (team,)).fetchone()[0]
+    assert db.execute("select invite_token_hash <> %s from public.teams", (old,)).fetchone()[0]  # 원문은 저장하지 않는다
+    with acting_as(db, "authenticated", bob):
+        assert db.execute("select public.join_team_with_invite(%s)", (old,)).fetchone()[0] == "pilab"
+        assert db.execute("select public.join_team_with_invite(%s)", (old,)).fetchone()[0] == "pilab"  # 두 번 눌러도 된다
+    assert db.execute("select accepted_at is not null from public.team_members where github_id = %s", (BOB_GITHUB_ID,)).fetchone()[0]
+
+    with acting_as(db, "authenticated", alice):
+        new = db.execute("select public.create_team_invite(%s)", (team,)).fetchone()[0]
+    with pytest.raises(psycopg.errors.NoDataFound), acting_as(db, "authenticated", carol):
+        db.execute("select public.join_team_with_invite(%s)", (old,))
+    db.execute("update public.teams set invite_expires_at = now() - interval '1 minute'")
+    with pytest.raises(psycopg.errors.NoDataFound), acting_as(db, "authenticated", carol):
+        db.execute("select public.join_team_with_invite(%s)", (new,))
+
+
+def test_invite_link_accepts_a_pending_join_request_and_moves_its_records(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _request_join(db, team, BOB_GITHUB_ID)
+    _record_pending(db, BOB_GITHUB_ID, "PD-waiting", "pilab")
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    with acting_as(db, "authenticated", alice):
+        token = db.execute("select public.create_team_invite(%s)", (team,)).fetchone()[0]
+
+    with acting_as(db, "authenticated", bob):
+        db.execute("select public.join_team_with_invite(%s)", (token,))
+
+    assert db.execute("select visibility, team_id::text from public.decisions where id = 'PD-waiting'").fetchone() == ("team", team)

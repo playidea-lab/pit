@@ -33,9 +33,13 @@ export default function AuthButton() {
   const handleSignIn = async () => {
     const supabase = createClient();
     if (!supabase) return;
+    // 로그인 뒤 돌아올 곳: ?next= 가 있으면 그곳, 아니면 지금 보던 페이지 (초대 링크 등)
+    const next = new URLSearchParams(window.location.search).get("next") ?? window.location.pathname;
+    const callback = new URL("/auth/callback", window.location.origin);
+    if (next && next !== "/") callback.searchParams.set("next", next);
     await supabase.auth.signInWithOAuth({
       provider: "github",
-      options: { redirectTo: `${window.location.origin}/auth/callback`, scopes: GITHUB_SCOPES },
+      options: { redirectTo: callback.toString(), scopes: GITHUB_SCOPES },
     });
   };
 

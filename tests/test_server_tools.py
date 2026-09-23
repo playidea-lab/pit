@@ -420,6 +420,14 @@ ALICE_IN_PILAB = Caller(github_id=1001, github_login="alice", team_slug="pilab")
 BOB_IN_PILAB = Caller(github_id=2002, github_login="bob", team_slug="pilab")
 
 
+def _personal(repository: InMemoryRepository, decision_id: str) -> str:
+    """팀이 하나뿐인 사람의 기록은 팀으로 간다 — 개인 기록이 필요한 시험은 명시적으로 개인 범위로 돌린다"""
+    repository.rows = [
+        r.model_copy(update={"visibility": "private", "team_id": None}) if r.id == decision_id else r for r in repository.rows
+    ]
+    return decision_id
+
+
 def _team_repository() -> InMemoryRepository:
     repository = InMemoryRepository()
     repository.teams = {"pilab": TEAM_ID}
@@ -488,7 +496,7 @@ def test_team_search_returns_teammates_confirmed_team_decisions_with_author():
     tools = _tools(repository)
     _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="캐시 A", human_quote="밥의 확정 팀 결정")))
     _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="캐시 B", human_quote="밥의 초안 팀 결정")))
-    _run(tools.record_decision(BOB, _arguments(proposal="캐시 C", human_quote="밥의 확정 비공개 결정")))
+    _personal(repository, _run(tools.record_decision(BOB, _arguments(proposal="캐시 C", human_quote="밥의 확정 비공개 결정")))["id"])
     _run(tools.record_decision(ALICE, _arguments(proposal="캐시 D", human_quote="앨리스 자기 초안")))
     repository.rows[0] = repository.rows[0].model_copy(update={"status": "confirmed"})
     repository.rows[2] = repository.rows[2].model_copy(update={"status": "confirmed"})
@@ -497,7 +505,7 @@ def test_team_search_returns_teammates_confirmed_team_decisions_with_author():
 
     assert sorted((item["human_quote"], item.get("by"), item.get("team")) for item in found) == [
         ("밥의 확정 팀 결정", "bob", "pilab"),
-        ("앨리스 자기 초안", None, None),
+        ("앨리스 자기 초안", None, "pilab"),  # 팀이 하나뿐인 앨리스의 기록도 팀 기록이다
     ]
 
 
@@ -524,7 +532,7 @@ def test_get_decision_of_teammate_is_readable_only_when_confirmed_team_scoped():
     repository = _team_repository()
     tools = _tools(repository)
     team_id = _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="팀 것")))["id"]
-    private_id = _run(tools.record_decision(BOB, _arguments(proposal="비공개 것")))["id"]
+    private_id = _personal(repository, _run(tools.record_decision(BOB, _arguments(proposal="비공개 것")))["id"])
 
     with pytest.raises(ToolFailure, match="그런 결정이 없습니다"):
         _run(tools.get_decision(ALICE, team_id))  # 아직 초안
@@ -778,7 +786,7 @@ def test_links_only_to_readable_decisions_and_conflicts_are_only_proposed():
     repository = _team_repository()
     tools = _tools(repository)
     shared = _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="밥 공유")))["id"]
-    private = _run(tools.record_decision(BOB, _arguments(proposal="밥 비공개")))["id"]
+    private = _personal(repository, _run(tools.record_decision(BOB, _arguments(proposal="밥 비공개")))["id"])
     repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
 
     result = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(proposal="앨리스", links=[
@@ -820,7 +828,7 @@ def test_topic_search_never_returns_teammates_unshared_or_other_teams_decisions(
     repository = _team_repository()
     tools = _tools(repository)
     _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="유예 중", about=[{"name": "평가 분할"}])))
-    _run(tools.record_decision(BOB, _arguments(proposal="밥 개인", about=[{"name": "평가 분할"}])))
+    _personal(repository, _run(tools.record_decision(BOB, _arguments(proposal="밥 개인", about=[{"name": "평가 분할"}])))["id"])
 
     assert _run(tools.search_my_decisions(ALICE_IN_PILAB, "평가 분할")) == []
 
@@ -829,7 +837,7 @@ def test_get_decision_shows_topics_and_related_decisions_the_caller_can_read():
     repository = _team_repository()
     tools = _tools(repository)
     base = _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="시계열로 간다")))["id"]
-    hidden = _run(tools.record_decision(BOB, _arguments(proposal="밥 개인 메모")))["id"]
+    hidden = _personal(repository, _run(tools.record_decision(BOB, _arguments(proposal="밥 개인 메모")))["id"])
     repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
     mine = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(
         proposal="시간 분할", about=[{"name": "평가 분할"}],
@@ -885,3 +893,27 @@ def test_no_conflict_for_same_verdict_unrelated_proposal_unreadable_or_explicitl
 
     assert "possible_conflicts" not in result
     assert same  # 같은 거부끼리는 충돌이 아니다
+
+
+
+# --- 주소 하나: 팀이 하나뿐이면 기본 주소도 그 팀 -----------------------------------
+
+
+def test_single_team_member_records_and_searches_as_the_team_without_the_team_address():
+    repository = _team_repository()
+    tools = _tools(repository)
+
+    result = _run(tools.record_decision(ALICE, _arguments()))
+
+    assert (result["visibility"], repository.rows[0].team_id) == ("team", TEAM_ID)
+    repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
+    assert _run(tools.search_my_decisions(BOB, "캐시"))[0]["by"] == "alice"
+
+
+def test_member_of_several_teams_or_none_stays_personal_without_a_team_address():
+    repository = _team_repository()
+    repository.memberships[1001] = [(TEAM_ID, "pilab"), ("22222222-2222-2222-2222-222222222222", "other")]
+    tools = _tools(repository)
+
+    assert _run(tools.record_decision(ALICE, _arguments()))["visibility"] == "private"
+    assert _run(tools.record_decision(Caller(github_id=3003, github_login="carol"), _arguments()))["visibility"] == "private"

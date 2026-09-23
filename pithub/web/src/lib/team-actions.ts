@@ -6,6 +6,7 @@
  */
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getMyAccount } from "@/lib/decisions";
@@ -122,5 +123,31 @@ export async function setJudgeConsent(form: FormData): Promise<void> {
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.rpc("set_team_judge_consent", { team: teamId, consent });
   if (error) throw new Error(`판정기 동의 변경 실패: ${error.message}`);
+  revalidatePath(`/t/${slug}`);
+}
+
+const INVITE_COOKIE = "pithub_new_invite";
+const INVITE_COOKIE_SECONDS = 600;
+
+/** 초대 링크 만들기·다시 만들기 — 팀 소유자만. 이전 링크는 무효. 원문은 이번 한 번만 보인다(쿠키로 전달). */
+export async function createInvite(form: FormData): Promise<void> {
+  const teamId = text(form, "team_id");
+  const slug = text(form, "slug");
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase.rpc("create_team_invite", { team: teamId });
+  if (error) throw new Error(`초대 링크 만들기 실패: ${error.message}`);
+  (await cookies()).set(INVITE_COOKIE, String(data), {
+    httpOnly: true, secure: true, sameSite: "strict", maxAge: INVITE_COOKIE_SECONDS, path: `/t/${slug}`,
+  });
+  revalidatePath(`/t/${slug}`);
+}
+
+export async function revokeInvite(form: FormData): Promise<void> {
+  const teamId = text(form, "team_id");
+  const slug = text(form, "slug");
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase.rpc("revoke_team_invite", { team: teamId });
+  if (error) throw new Error(`초대 링크 끄기 실패: ${error.message}`);
+  (await cookies()).delete({ name: INVITE_COOKIE, path: `/t/${slug}` });
   revalidatePath(`/t/${slug}`);
 }

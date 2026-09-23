@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
 from pydantic import ValidationError
@@ -50,7 +50,15 @@ class DecisionTools:
     limiter: RateLimiter
     now: Callable[[], datetime]
 
+    async def with_default_team(self, caller: Caller) -> Caller:
+        """팀 주소 없이 들어와도, 속한 팀이 하나뿐이면 그 팀으로 본다 — 주소는 하나면 된다 (팀 계정 전제)"""
+        if caller.team_slug:
+            return caller
+        teams = await self.repository.member_teams(caller.github_id)
+        return replace(caller, team_slug=teams[0][1]) if len(teams) == 1 else caller
+
     async def record_decision(self, caller: Caller, arguments: dict[str, object]) -> dict[str, object]:
+        caller = await self.with_default_team(caller)
         try:
             payload = RecordDecisionInput.model_validate(arguments)
         except ValidationError as e:
@@ -162,7 +170,8 @@ class DecisionTools:
         scope: str | None = None,
     ) -> list[dict[str, object]]:  # fmt: skip
         bounded = max(1, min(limit, MAX_SEARCH_LIMIT))
-        # 팀 커넥터로 들어온 세션은 묻지 않아도 팀까지 본다
+        caller = await self.with_default_team(caller)
+        # 팀으로 들어온 세션은 묻지 않아도 팀까지 본다
         scope = scope or (SCOPE_TEAM if caller.team_slug else SCOPE_MINE)
         teams = await self._teams_in_scope(caller, scope)
         found = await self.repository.search_recorded(caller.github_id, query, bounded)

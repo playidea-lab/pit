@@ -33,18 +33,13 @@ const SCENES = [
 /** 들어온 사람이 셋 중 누구인지 — 각자 할 일만 */
 const ROLES = [
   {
-    title: "팀을 만든다",
-    body: "회사 팀을 만들고 저장소에 .mcp.json 한 줄을 커밋한다. 팀원은 승인 한 번으로 들어온다.",
+    title: "팀 관리자",
+    steps: ["팀을 만든다", "초대 링크를 팀 채널에 붙인다", "내 AI 도구에도 주소 하나를 붙인다"],
     cta: ["팀 만들기", "/teams"],
   },
   {
-    title: "팀에 들어왔다",
-    body: "팀 저장소를 받아 세션을 열면 로그인만 물어본다. 그 뒤로는 평소대로 일한다. 첫 기록이 곧 가입 요청이다.",
-    cta: ["팀 보기", "/teams"],
-  },
-  {
-    title: "기획·경영 쪽이다",
-    body: "claude.ai에 커넥터 하나를 붙인다. 당신이 정한 방향이 개발자의 AI에 먼저 도착한다.",
+    title: "팀원",
+    steps: ["초대 링크를 누르고 GitHub로 로그인한다", "쓰는 도구(Claude Code · claude.ai · Codex)에 주소 하나를 붙인다", "평소처럼 일한다"],
     cta: ["연결하기", "/connect"],
   },
 ] as const;
@@ -161,12 +156,16 @@ export default async function HomePage() {
         </div>
 
         <div>
-          <h2 className="mb-5 text-[15px] font-semibold text-ink">어디서 시작하나</h2>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {ROLES.map(({ title, body, cta }) => (
+          <h2 className="mb-5 text-[15px] font-semibold text-ink">시작하기 · 2분</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {ROLES.map(({ title, steps, cta }) => (
               <div key={title} className="card flex flex-col">
-                <p className="mb-1.5 font-medium text-ink">{title}</p>
-                <p className="muted mb-4 flex-1 text-sm leading-relaxed">{body}</p>
+                <p className="mb-3 font-medium text-ink">{title}</p>
+                <ol className="muted mb-4 flex-1 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed">
+                  {steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
                 <Link href={cta[1]} className="btn btn-secondary h-9 self-start px-4">
                   {cta[0]}
                 </Link>

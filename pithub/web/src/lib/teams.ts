@@ -19,6 +19,8 @@ export interface Team {
   created_at: string;
   /** 외부 판정기(JEV)에 팀 결정을 보내도 된다고 소유자가 동의한 시각 (D-0009 §7) */
   external_judge_consent_at?: string | null;
+  /** 살아 있는 초대 링크의 만료 시각 (없으면 링크 없음) */
+  invite_expires_at?: string | null;
 }
 
 export interface TeamMember {

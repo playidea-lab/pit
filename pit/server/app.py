@@ -75,8 +75,8 @@ that call is how pithub learns which records are useful. Results marked `verifie
 automatically and not yet confirmed by the user; cite them with that caveat. `principle: true` marks a rule
 the user wants followed.
 
-Teams: if this connection came through a team address (`/t/<team>/mcp`), decisions are recorded for that
-team. They become visible to the team 3 days later unless the user withdraws them; once visible they are the
+Teams: if the user belongs to one team (or connected through a team address `/t/<team>/mcp`), decisions are
+recorded for that team. They become visible to the team 3 days later unless the user withdraws them; once visible they are the
 company's record. Searches include the team's visible decisions by default. Results with `by` are a teammate's —
 say whose they are when you rely on them ("last month <by> rejected the same approach"). Team principles
 rank first. You never see a teammate's private records or their team records still inside the 3-day window. Pass `scope` to search only your
@@ -153,6 +153,8 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         """Show which pithub account this connection is signed in as, and its team status if connected through a team address."""
         caller = _caller()
         result: dict[str, str | int | None] = {"github_id": caller.github_id, "github_login": caller.github_login}
+        if tools is not None:
+            caller = await _run(tools.with_default_team(caller))
         if caller.team_slug and tools is not None:
             _, status = await _run(tools.team_status(caller, caller.team_slug))
             result.update({"team": caller.team_slug, "team_status": status})

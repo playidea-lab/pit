@@ -28,9 +28,8 @@ export default async function TeamsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-ink">팀</h1>
           <p className="muted mt-1 text-sm">
-            팀 저장소에 팀 커넥터 주소를 넣어 두면, 거기서 일하는 모든 팀원의 결정이 팀 범위로 기록됩니다.
-            처음 오는 사람은 자동으로 가입 요청이 되고, 소유자가 승인만 누르면 됩니다. 팀에 보이는 것은 각자가
-            확인한 결정뿐입니다.
+            팀을 만들고 초대 링크를 팀 채널에 붙이세요. 링크를 누르고 로그인한 사람은 바로 팀원이 됩니다. 팀원이 AI와
+            일하며 내린 판단은 3일 뒤 팀에 보이고, 서로의 AI가 그 판단을 먼저 찾아봅니다.
           </p>
         </div>
 

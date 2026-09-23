@@ -39,13 +39,17 @@ claude.ai · Claude Code · Codex에 MCP 커넥터 하나를 붙이면, 당신�
 
 ## 호스팅된 pithub 쓰기
 
-1. 도구에 커넥터를 추가한다 — claude.ai: 설정 → 커넥터 → 커스텀 커넥터 · Claude Code: `claude mcp add --transport http pithub <MCP URL>` · Codex: Settings → MCP servers
-2. GitHub로 로그인한다.
-3. 끝. 평소처럼 일하면 된다. 웹의 정리함에는 봐 둘 만한 것만 온다.
+**팀 관리자**: 웹에서 팀을 만들고, 초대 링크를 팀 채널에 붙인다.
+**팀원**: 링크를 누르고 GitHub로 로그인한다(바로 팀원) → 쓰는 도구에 주소 하나를 붙인다 → 평소처럼 일한다.
 
-**팀**: 웹에서 팀을 만들고 GitHub 아이디로 초대한다(본인이 수락). 팀 저장소에 팀 커넥터 주소 `…/t/<팀>/mcp`를
-`.mcp.json`으로 커밋해 두면, 그 저장소에서 일하는 팀원의 결정은 아무것도 고르지 않아도 팀 범위로 기록되고,
-각자 확인한 것만 팀에 보인다. 팀원의 AI는 `search_my_decisions`로 팀 원칙과 서로의 확정된 결정을 찾는다.
+| 도구 | 연결 |
+|---|---|
+| Claude Code | `claude mcp add -s user --transport http pithub <MCP URL>` → `/mcp` 에서 로그인 |
+| claude.ai | 설정 → 커넥터 → 커스텀 커넥터에 주소 → 로그인 |
+| Codex | `codex mcp add pithub --url <MCP URL> && codex mcp login pithub` |
+
+주소는 하나다. 팀이 하나뿐인 사람은 서버가 그 팀으로 기록한다(여러 팀이면 팀 주소 `…/t/<팀>/mcp`).
+기록은 3일 뒤 팀에 보이고, 그 전에 정리함에서 뺄 수 있다.
 
 ## 직접 돌리기 (셀프호스트)
 
