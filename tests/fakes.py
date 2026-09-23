@@ -180,3 +180,6 @@ class InMemoryRepository:
 
     async def request_join(self, team_id: str, github_id: int) -> None:
         self.join_requests.add((team_id, github_id))
+
+    async def record_transfer(self, decision, reader_github_id: int, via: str, client) -> None:  # noqa: ANN001
+        self.transfers = getattr(self, "transfers", []) + [(decision.id, decision.owner_github_id, reader_github_id, via, client)]

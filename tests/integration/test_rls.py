@@ -598,3 +598,36 @@ def test_only_team_owner_can_erase_a_member_persona(db):
     assert erased == 1
     assert ids(db, "select id from public.decisions") == []
     assert db.execute("select count(*) from public.accounts where github_id = %s", (ALICE_GITHUB_ID,)).fetchone()[0] == 0
+
+
+
+# --- G0: 건너간 판단 ------------------------------------------------------------
+
+
+def test_transfers_visible_to_owner_and_reader_and_team_sees_only_the_count(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    _join(db, team, 3003)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-a", team, age_days=4)
+    db.execute(
+        "insert into public.transfers (decision_id, owner_github_id, reader_github_id, team_id, via) values ('PD-a', %s, %s, %s, 'get')",
+        (ALICE_GITHUB_ID, BOB_GITHUB_ID, team),
+    )
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    carol = sign_in_with_github(db, 3003, "carol")
+    outsider = sign_in_with_github(db, 4004, "dave")
+
+    for person in (alice, bob):
+        with acting_as(db, "authenticated", person):
+            assert db.execute("select count(*) from public.transfers").fetchone()[0] == 1
+    with acting_as(db, "authenticated", carol):
+        assert db.execute("select count(*) from public.transfers").fetchone()[0] == 0
+        assert db.execute("select public.team_transfer_count(%s, now() - interval '7 days')", (team,)).fetchone()[0] == 1
+    with acting_as(db, "authenticated", outsider):
+        assert db.execute("select public.team_transfer_count(%s, now() - interval '7 days')", (team,)).fetchone()[0] == 0
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", bob):
+        db.execute(
+            "insert into public.transfers (decision_id, owner_github_id, reader_github_id, via) values ('PD-a', %s, %s, 'get')",
+            (ALICE_GITHUB_ID, BOB_GITHUB_ID),
+        )

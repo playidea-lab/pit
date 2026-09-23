@@ -13,6 +13,7 @@ import {
   listTeamDecisions,
   listTeamMembers,
   teamMcpUrl,
+  weeklyTransferCount,
   type Team,
   type TeamMember,
 } from "@/lib/teams";
@@ -91,6 +92,11 @@ function MemberRow({ member, team, isOwner, myId }: { member: TeamMember; team: 
   );
 }
 
+// 요청 시점의 시각 — react-hooks/purity 가 컴포넌트 본문의 Date 생성을 막으므로 밖에서 읽는다
+function requestTime(): Date {
+  return new Date();
+}
+
 /**
  * 팀 페이지 — 커넥터 주소, 팀 원칙, 최근 팀 결정, 구성원.
  * 팀원의 결정은 team_decisions 뷰로만 읽는다. 초대만 받은 사람에게는 팀 이름과 수락 안내만 보인다.
@@ -105,7 +111,11 @@ export default async function TeamPage({ params }: PageProps) {
   const team = await getTeamBySlug(supabase, slug);
   if (!team) notFound();
 
-  const [members, decisions] = await Promise.all([listTeamMembers(supabase, team.id), listTeamDecisions(supabase, team.id)]);
+  const [members, decisions, transfers] = await Promise.all([
+    listTeamMembers(supabase, team.id),
+    listTeamDecisions(supabase, team.id),
+    weeklyTransferCount(supabase, team.id, requestTime()),
+  ]);
   const me = members.find((m) => m.github_id === account.github_id);
   if (!me?.accepted_at) redirect("/teams");
   const isOwner = me.role === "owner";
@@ -123,6 +133,9 @@ export default async function TeamPage({ params }: PageProps) {
           <span className="faint text-sm">/t/{team.slug}</span>
           <span className="faint text-sm">
             구성원 {members.filter((m) => m.accepted_at).length} · 팀 결정 {decisions.length}건
+          </span>
+          <span className="text-sm text-ink" title="동료의 AI가 다른 사람의 판단을 가져간 횟수 (최근 7일)">
+            이번 주 건너간 판단 <b>{transfers}</b>건
           </span>
           <Link href={`/t/${slug}/agents`} className="link ml-auto text-sm">
             AGENTS.md 초안

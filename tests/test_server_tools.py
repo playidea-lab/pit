@@ -712,3 +712,31 @@ def test_stored_decision_write_excludes_created_at():
     _run(_tools(repository).record_decision(ALICE, _arguments()))
 
     assert "created_at" not in repository.rows[0].model_dump(mode="json", exclude=WRITE_EXCLUDE)
+
+
+
+# --- G0: 건너간 판단 ------------------------------------------------------------
+
+
+def test_reading_a_teammates_decision_records_a_transfer_but_reading_ones_own_does_not():
+    repository = _team_repository()
+    tools = _tools(repository)
+    bobs = _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="밥의 판단")))["id"]
+    alices = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(proposal="앨리스 판단")))["id"]
+    repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
+
+    _run(tools.get_decision(ALICE, bobs, client="claude.ai"))
+    _run(tools.get_decision(ALICE, alices))
+
+    assert repository.transfers == [(bobs, 2002, 1001, "get", "claude.ai")]
+
+
+def test_failed_read_of_unshared_decision_records_no_transfer():
+    repository = _team_repository()
+    tools = _tools(repository)
+    bobs = _run(tools.record_decision(BOB_IN_PILAB, _arguments()))["id"]  # 아직 3일 유예 안
+
+    with pytest.raises(ToolFailure):
+        _run(tools.get_decision(ALICE, bobs))
+
+    assert getattr(repository, "transfers", []) == []

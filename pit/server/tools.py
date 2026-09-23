@@ -36,6 +36,8 @@ STATUS_CONFIRMED = "confirmed"
 # 팀 주소로 왔지만 아직 구성원이 아닌 사람의 기록: private 로 두고 승인 순간 DB 트리거가 팀 범위로 옮긴다
 TEAM_STATUS_PENDING = "pending"
 TEAM_STATUS_MEMBER = "member"
+# transfers.via — 판단이 어떤 경로로 건너갔나
+TRANSFER_VIA_GET = "get"
 
 
 class ToolFailure(Exception):
@@ -164,7 +166,7 @@ class DecisionTools:
         await self.repository.record_search(caller.github_id, query, [d.id for d in found], client)
         return [_summary(d, by=logins.get(d.owner_github_id), team=teams.get(d.team_id or "")) for d in found]
 
-    async def get_decision(self, caller: Caller, decision_id: str) -> dict[str, object]:
+    async def get_decision(self, caller: Caller, decision_id: str, client: str | None = None) -> dict[str, object]:
         decision = await self.repository.get_by_id(decision_id)
         if decision is None or not await self._can_read(caller, decision):
             raise ToolFailure("그런 결정이 없습니다.")
@@ -172,6 +174,9 @@ class DecisionTools:
         await self.repository.mark_cited(decision.owner_github_id, decision_id)
         if decision.owner_github_id == caller.github_id:
             return _detail(decision)
+        # 남의 판단을 가져갔다 = 판단이 사람 사이를 건너갔다 (북극성 지표, cites 엣지)
+        await self.repository.record_transfer(decision, caller.github_id, TRANSFER_VIA_GET, client)
+        logger.info("판단 건너감", extra={"decision_id": decision_id, "team_id": decision.team_id})
         teams = dict(await self.repository.member_teams(caller.github_id))
         logins = await self.repository.logins_of([decision.owner_github_id])
         return _detail(decision, by=logins.get(decision.owner_github_id), team=teams.get(decision.team_id or ""))

@@ -188,9 +188,10 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
     @server.tool
     async def get_decision(
         decision_id: Annotated[str, Field(description="An id returned by search_my_decisions or record_decision.")],
+        client: Annotated[str | None, Field(description="Which app this is: claude.ai, claude-code, codex, ...")] = None,
     ) -> dict[str, object]:
-        """Read one decision in full — this user's own, or a teammate's confirmed team decision."""
-        return await _run(ready().get_decision(_caller(), decision_id))
+        """Read one decision in full — this user's own, or one visible to their team. Call it for the records you actually rely on."""
+        return await _run(ready().get_decision(_caller(), decision_id, client))
 
     if repository is not None:
         api = LocalApi(repository)

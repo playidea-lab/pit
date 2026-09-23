@@ -77,6 +77,10 @@ class DecisionRepository(Protocol):
 
     async def logins_of(self, github_ids: list[int]) -> dict[int, str]: ...
 
+    async def record_transfer(self, decision: StoredDecision, reader_github_id: int, via: str, client: str | None) -> None:
+        """남의 판단을 가져간 사건을 남긴다 (G0)"""
+        ...
+
     async def find_team(self, slug: str) -> str | None:
         """slug 의 팀 id. 없으면 None."""
         ...
@@ -279,6 +283,15 @@ class SupabaseRepository:
         params = {"github_id": f"in.({ids})", "select": "github_id,github_login"}
         rows = (await self._request("GET", "/accounts", params=params)).json()
         return {int(row["github_id"]): str(row["github_login"]) for row in rows}
+
+    async def record_transfer(self, decision: StoredDecision, reader_github_id: int, via: str, client: str | None) -> None:
+        await self._request(
+            "POST", "/transfers", headers={"Prefer": "return=minimal"},
+            json={
+                "decision_id": decision.id, "owner_github_id": decision.owner_github_id,
+                "reader_github_id": reader_github_id, "team_id": decision.team_id, "via": via, "client": client,
+            },
+        )  # fmt: skip
 
     async def find_team(self, slug: str) -> str | None:
         rows = (await self._request("GET", "/teams", params={"slug": f"eq.{slug}", "select": "id", "limit": "1"})).json()

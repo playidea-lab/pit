@@ -164,3 +164,14 @@ export function departedAuthors(decisions: TeamDecision[]): { github_id: number;
   }
   return [...byId.values()];
 }
+
+const TRANSFER_WINDOW_DAYS = 7;
+const MS_PER_DAY = 86_400_000;
+
+/** 이번 주(최근 7일) 이 팀에서 사람 사이를 건너간 판단 수 — 북극성 지표 (G0) */
+export async function weeklyTransferCount(supabase: SupabaseClient, teamId: string, now: Date): Promise<number> {
+  const since = new Date(now.getTime() - TRANSFER_WINDOW_DAYS * MS_PER_DAY).toISOString();
+  const { data, error } = await supabase.rpc("team_transfer_count", { team: teamId, since });
+  if (error) fail("weeklyTransferCount", error);
+  return Number(data ?? 0);
+}
