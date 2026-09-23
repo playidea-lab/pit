@@ -631,3 +631,68 @@ def test_transfers_visible_to_owner_and_reader_and_team_sees_only_the_count(db):
             "insert into public.transfers (decision_id, owner_github_id, reader_github_id, via) values ('PD-a', %s, %s, 'get')",
             (ALICE_GITHUB_ID, BOB_GITHUB_ID),
         )
+
+
+# --- G1: 판단 그래프 스키마 --------------------------------------------------------
+
+
+def _node(conn, name: str, team: str | None = None, owner: int | None = None, kind: str = "topic") -> str:  # noqa: ANN001
+    return str(conn.execute(
+        "insert into public.nodes (team_id, owner_github_id, kind, name, norm_name) values (%s, %s, %s, %s, lower(%s)) returning id",
+        (team, owner, kind, name, name),
+    ).fetchone()[0])
+
+
+def _about(conn, decision_id: str, node_id: str) -> None:  # noqa: ANN001
+    conn.execute("insert into public.decision_nodes (decision_id, node_id) values (%s, %s)", (decision_id, node_id))
+
+
+def test_graph_nodes_and_edges_follow_the_visibility_of_their_decision(db):
+    """팀원은 팀에 보인 결정에 매달린 노드·엣지만 본다. 3일 유예 중인 결정의 주제 이름도 새지 않는다."""
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-shared", team, age_days=4)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-fresh", team, age_days=1)
+    shared_topic = _node(db, "평가 분할", team=team)
+    secret_topic = _node(db, "인수 협상", team=team)
+    _about(db, "PD-shared", shared_topic)
+    _about(db, "PD-fresh", secret_topic)
+    db.execute("insert into public.decision_links (from_decision, to_decision, relation) values ('PD-fresh', 'PD-shared', 'depends_on')")
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    outsider = sign_in_with_github(db, 3003, "carol")
+
+    with acting_as(db, "authenticated", alice):
+        assert sorted(ids(db, "select name from public.nodes")) == ["인수 협상", "평가 분할"]
+        assert db.execute("select count(*) from public.decision_links").fetchone()[0] == 1
+    with acting_as(db, "authenticated", bob):
+        assert ids(db, "select name from public.nodes") == ["평가 분할"]
+        assert ids(db, "select decision_id from public.decision_nodes") == ["PD-shared"]
+        assert db.execute("select count(*) from public.decision_links").fetchone()[0] == 0
+    with acting_as(db, "authenticated", outsider):
+        assert db.execute("select count(*) from public.nodes").fetchone()[0] == 0
+
+
+def test_web_users_cannot_write_graph_rows(db):
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-a")
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", alice):
+        db.execute("insert into public.nodes (owner_github_id, kind, name, norm_name) values (%s, 'topic', 'x', 'x')", (ALICE_GITHUB_ID,))
+
+
+def test_supersedes_array_is_mirrored_into_links_and_nodes_are_unique_per_namespace(db):
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-old")
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-new")
+    db.execute("update public.decisions set supersedes = '{PD-old,PD-missing}' where id = 'PD-new'")
+    assert db.execute("select from_decision, to_decision from public.decision_links").fetchall() == [("PD-new", "PD-old")]
+    db.execute("update public.decisions set supersedes = '{}' where id = 'PD-new'")
+    assert db.execute("select count(*) from public.decision_links").fetchone()[0] == 0
+
+    _node(db, "평가 분할", owner=ALICE_GITHUB_ID)
+    with pytest.raises(psycopg.errors.UniqueViolation), db.transaction():
+        _node(db, "평가 분할", owner=ALICE_GITHUB_ID)
+    # 이름 공간이 다르면 같은 이름도 따로 존재한다
+    db.execute("insert into public.accounts (github_id, github_login) values (%s, 'bob') on conflict do nothing", (BOB_GITHUB_ID,))
+    _node(db, "평가 분할", owner=BOB_GITHUB_ID)
+    assert db.execute("select count(*) from public.nodes").fetchone()[0] == 2
