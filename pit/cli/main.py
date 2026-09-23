@@ -12,6 +12,7 @@ from pit.cli.remote import audit_app, login_cmd, pull_cmd, push_cmd
 from pit.cli.review import app as review_app
 from pit.cli.setup import setup_cmd
 from pit.cli.transcripts import app as transcripts_app
+from pit.cli.twin import app as twin_app
 from pit.cli.vault import app as vault_app
 
 app = typer.Typer(
@@ -34,6 +35,7 @@ app.command("push")(push_cmd)
 app.command("pull")(pull_cmd)
 app.add_typer(audit_app, name="audit")
 app.command("setup")(setup_cmd)
+app.add_typer(twin_app, name="twin")
 
 
 # Shortcut: pit feature -> pit features show
