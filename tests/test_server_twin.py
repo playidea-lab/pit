@@ -123,36 +123,45 @@ def _jev(status: int = 200, choice: str = "approve", confidence: float = 0.93): 
     return JevJudge("test-key", httpx.AsyncClient(transport=httpx.MockTransport(handler))), seen
 
 
-def test_consenting_team_uses_jev_with_evidence_only_and_no_names():
+def test_knn_answers_and_jev_only_shadows_for_consenting_teams_without_names():
+    """답은 kNN, JEV는 그림자 예측만 기록한다 — 이름은 보내지 않는다 (2026-09-24 결정)"""
     rows = [_decision(i, "평가를 무작위 분할로 한다", "reject") for i in range(3)]
     repository = _repository(rows)
     repository.consent = {TEAM}
     jev, seen = _jev(choice="approve", confidence=0.93)
+    service = TwinService(repository, lambda: NOW, jev)
 
-    answer = asyncio.run(TwinService(repository, lambda: NOW, jev).ask(ALICE, "bob", "평가를 무작위 분할로", "평가"))
-
-    assert (answer["judge"], answer["prediction"], answer["confidence"]) == ("jev", "approve", 0.93)
-    sent = str(seen[0])
-    assert "bob" not in sent and "alice" not in sent and "평가를 무작위 분할로 한다" in sent
-
-
-def test_without_consent_jev_is_never_called():
-    repository = _repository([_decision(i, "평가를 무작위 분할로 한다", "reject") for i in range(3)])
-    jev, seen = _jev()
-
-    answer = asyncio.run(TwinService(repository, lambda: NOW, jev).ask(ALICE, "bob", "평가를 무작위 분할로", "평가"))
-
-    assert answer["judge"] == "knn" and seen == []
-
-
-def test_jev_failure_falls_back_to_knn():
-    repository = _repository([_decision(i, "평가를 무작위 분할로 한다", "reject") for i in range(3)])
-    repository.consent = {TEAM}
-    jev, _ = _jev(status=529)
-
-    answer = asyncio.run(TwinService(repository, lambda: NOW, jev).ask(ALICE, "bob", "평가를 무작위 분할로", "평가"))
+    answer = asyncio.run(service.ask(ALICE, "bob", "평가를 무작위 분할로", "평가"))
+    asyncio.run(service.shadow_now(1, rows, "평가", "평가를 무작위 분할로"))
 
     assert (answer["judge"], answer["prediction"]) == ("knn", "reject")
+    assert repository.consult_rows[0] == {"prediction": "reject", "judge": "knn", "shadow_judge": "jev", "shadow_prediction": "approve"}
+    assert "bob" not in str(seen[-1]) and "alice" not in str(seen[-1])
+
+
+def test_without_consent_jev_shadow_is_never_called():
+    rows = [_decision(i, "평가를 무작위 분할로 한다", "reject") for i in range(3)]
+    repository = _repository(rows)
+    jev, seen = _jev()
+    service = TwinService(repository, lambda: NOW, jev)
+
+    asyncio.run(service.ask(ALICE, "bob", "평가를 무작위 분할로", "평가"))
+    asyncio.run(service.shadow_now(1, rows, "평가", "평가를 무작위 분할로"))
+
+    assert seen == [] and "shadow_judge" not in repository.consult_rows[0]
+
+
+def test_jev_shadow_failure_leaves_the_answer_alone():
+    rows = [_decision(i, "평가를 무작위 분할로 한다", "reject") for i in range(3)]
+    repository = _repository(rows)
+    repository.consent = {TEAM}
+    jev, _ = _jev(status=529)
+    service = TwinService(repository, lambda: NOW, jev)
+
+    answer = asyncio.run(service.ask(ALICE, "bob", "평가를 무작위 분할로", "평가"))
+    asyncio.run(service.shadow_now(1, rows, "평가", "평가를 무작위 분할로"))
+
+    assert answer["prediction"] == "reject" and "shadow_judge" not in repository.consult_rows[0]
 
 
 def test_jev_response_with_unknown_choice_is_rejected():

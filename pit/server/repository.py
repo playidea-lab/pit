@@ -121,8 +121,15 @@ class DecisionRepository(Protocol):
         ...
 
     async def record_consult(
-        self, asker: int, twin: int, question: str, decision_ids: list[str], confidence: float, abstained: bool
-    ) -> None: ...
+        self, asker: int, twin: int, question: str, decision_ids: list[str], confidence: float, abstained: bool,
+        prediction: str | None = None, judge: str | None = None,
+    ) -> int:  # fmt: skip
+        """자문 기록 한 줄을 남기고 그 id 를 돌려준다"""
+        ...
+
+    async def record_shadow(self, consult_id: int, judge: str, prediction: str, confidence: float) -> None:
+        """그림자 판정기(JEV)의 예측 — 답에는 쓰지 않고 비교용으로만 남긴다"""
+        ...
 
     async def create_twin_question(
         self, asker: int, twin: int, team_id: str | None, situation: str, proposal: str, confidence: float

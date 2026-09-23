@@ -1,11 +1,12 @@
 """트윈에게 묻기 (G6, docs/GRAPH_ENGINEERING.md)
 
 트윈은 따로 학습시킨 모델이 아니라 그 사람의 판단 그래프를 묻는 사람의 권한만큼 잘라 본 관점이다(D-0009 §8).
-판정기는 팀 소유자가 동의한 팀이면 JEV(보정된 확신도), 아니면 비용이 들지 않는 kNN
-(오프라인 시험 G7에서 확신 ≥ 0.6 → 정확도 0.89).
+답은 비용이 들지 않는 kNN이 한다(오프라인 시험 G7: 균형 정확도 0.456, 확신 ≥ 0.6 → 0.89).
+팀 소유자가 동의한 팀이면 JEV가 같은 질문을 그림자로 판정해 기록만 한다 — 주인의 채점으로 둘을 다시 비교한다.
 확신하지 못하면 답하지 않고 본인에게 묻는다. 트윈은 설명하고 제안할 뿐 결정하지 않는다(D-0009 §3).
 """
 
+import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,6 +30,8 @@ TRANSFER_VIA_TWIN = "twin"
 # JEV 에 보여 줄 가장 비슷한 과거 판단 수
 JEV_HISTORY_LIMIT = 8
 JUDGE_JEV, JUDGE_KNN = "jev", "knn"
+# 띄워 둔 그림자 판정 — 참조를 잡아 두지 않으면 끝나기 전에 수거될 수 있다
+_SHADOW_TASKS: set[asyncio.Task[None]] = set()
 MAX_QUESTION_CHARS = 1000
 
 
@@ -56,36 +59,51 @@ class TwinService:
         pool = [d for d in await self.repository.team_decisions_of(twin_id, list(teams), TWIN_POOL_LIMIT) if readable(d)]
         query = f"{situation} {proposal}"
         evidence = sorted(pool, key=lambda d: proposal_similarity(query, f"{d.situation} {d.proposal}"), reverse=True)
-        prediction, confidence, judge = await self._judge(pool, evidence, situation, proposal, query)
+        # 답은 무료 kNN이 한다 (오프라인 시험: kNN 0.456 > JEV 0.389). JEV는 그림자로만 (2026-09-24 사용자 결정).
+        prediction, confidence = self._knn(pool, query)
         evidence = evidence[:TWIN_EVIDENCE_LIMIT]
         abstained = prediction is None or confidence < TWIN_CONFIDENCE_MIN
-        await self.repository.record_consult(
-            caller.github_id, twin_id, proposal, [d.id for d in evidence], confidence, abstained
-        )
+        consult_id = await self.repository.record_consult(
+            caller.github_id, twin_id, proposal, [d.id for d in evidence], confidence, abstained,
+            None if abstained else prediction, JUDGE_KNN,
+        )  # fmt: skip
+        self._start_shadow(consult_id, evidence, situation, proposal)
         await self._follow_up(caller, twin_id, departed, abstained, evidence, situation, proposal, confidence, teams)
         answer = _answer(login, departed, None if abstained else prediction, confidence, abstained, evidence)
-        return {**answer, "judge": judge}
+        return {**answer, "judge": JUDGE_KNN}
 
-    async def _judge(
-        self, pool: list[StoredDecision], ranked: list[StoredDecision], situation: str, proposal: str, query: str
-    ) -> tuple[str | None, float, str]:
-        """동의한 팀의 결정이 있고 JEV가 있으면 JEV, 아니면(또는 실패하면) kNN"""
-        if self.jev is not None:
-            consenting = await self.repository.consenting_teams(list({d.team_id for d in ranked if d.team_id}))
-            history = [(d.situation, d.proposal, d.verdict) for d in ranked if d.team_id in consenting and d.verdict]
-            if history:
-                try:
-                    verdict = await self.jev.judge(history[:JEV_HISTORY_LIMIT], situation, proposal)
-                    return verdict.label, verdict.confidence, JUDGE_JEV
-                except JevError as e:
-                    # 무료 판정기로 물러난다 (원인은 jev.py 가 경고로 남겼다)
-                    logger.info("트윈 판정기 kNN으로 대체", extra={"reason": str(e)})
+    def _knn(self, pool: list[StoredDecision], query: str) -> tuple[str | None, float]:
         items = [Item(id=d.id, decided_at=d.decided_at, text=f"{d.situation} {d.proposal}", label=d.verdict)
                  for d in pool if d.verdict]  # fmt: skip
         if not items:
-            return None, 0.0, JUDGE_KNN
+            return None, 0.0
         predicted = knn_judge(items, Item(id="?", decided_at=self.now(), text=query, label=""))
-        return predicted.label, predicted.confidence, JUDGE_KNN
+        return predicted.label, predicted.confidence
+
+    def _start_shadow(self, consult_id: int, ranked: list[StoredDecision], situation: str, proposal: str) -> None:
+        """JEV 그림자 판정을 기다리지 않고 띄운다 — 트윈의 응답 속도에 영향을 주지 않는다"""
+        if self.jev is None:
+            return
+        task = asyncio.create_task(self._shadow(consult_id, ranked, situation, proposal))
+        _SHADOW_TASKS.add(task)
+        task.add_done_callback(_SHADOW_TASKS.discard)
+
+    async def shadow_now(self, consult_id: int, ranked: list[StoredDecision], situation: str, proposal: str) -> None:
+        """테스트와 재실행용: 그림자 판정을 기다려서 돌린다"""
+        await self._shadow(consult_id, ranked, situation, proposal)
+
+    async def _shadow(self, consult_id: int, ranked: list[StoredDecision], situation: str, proposal: str) -> None:
+        """동의한 팀의 결정으로만 JEV를 부른다 (D-0009 §7). 실패는 경고만 남기고 답에는 영향이 없다."""
+        consenting = await self.repository.consenting_teams(list({d.team_id for d in ranked if d.team_id}))
+        history = [(d.situation, d.proposal, d.verdict) for d in ranked if d.team_id in consenting and d.verdict]
+        if not history or self.jev is None:
+            return
+        try:
+            verdict = await self.jev.judge(history[:JEV_HISTORY_LIMIT], situation, proposal)
+        except JevError as e:
+            logger.info("JEV 그림자 판정 실패", extra={"reason": str(e), "consult_id": consult_id})
+            return
+        await self.repository.record_shadow(consult_id, JUDGE_JEV, verdict.label, verdict.confidence)
 
     async def _follow_up(
         self, caller: Caller, twin_id: int, departed: bool, abstained: bool, evidence: list[StoredDecision],

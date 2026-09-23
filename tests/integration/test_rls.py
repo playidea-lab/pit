@@ -852,3 +852,20 @@ def test_only_team_owner_can_consent_to_the_external_judge(db):
     with acting_as(db, "authenticated", alice):
         db.execute("select public.set_team_judge_consent(%s, false)", (team,))
     assert db.execute("select external_judge_consent_at from public.teams").fetchone()[0] is None
+
+
+def test_only_the_twin_owner_can_rate_a_twin_answer(db):
+    db.execute("insert into public.accounts (github_id, github_login) values (%s, 'alice'), (%s, 'bob')", (ALICE_GITHUB_ID, BOB_GITHUB_ID))
+    consult = db.execute(
+        "insert into public.consult_log (asker_github_id, twin_github_id, question, prediction, judge, shadow_prediction) "
+        "values (%s, %s, 'q', 'reject', 'knn', 'approve') returning id",
+        (ALICE_GITHUB_ID, BOB_GITHUB_ID),
+    ).fetchone()[0]
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", alice):
+        db.execute("select public.rate_twin_answer(%s, 'reject')", (consult,))
+    with acting_as(db, "authenticated", bob):
+        db.execute("select public.rate_twin_answer(%s, 'reject')", (consult,))
+    assert db.execute("select owner_verdict, rated_at is not null from public.consult_log").fetchone() == ("reject", True)

@@ -239,8 +239,14 @@ class InMemoryRepository:
                 and r.team_id in team_ids and r.status != "discarded"]  # fmt: skip
         return rows[:limit]
 
-    async def record_consult(self, asker: int, twin: int, question: str, decision_ids: list, confidence: float, abstained: bool) -> None:
+    async def record_consult(self, asker: int, twin: int, question: str, decision_ids: list, confidence: float,
+                             abstained: bool, prediction=None, judge=None) -> int:  # noqa: ANN001
         self.consults = getattr(self, "consults", []) + [(asker, twin, question, decision_ids, abstained)]
+        self.consult_rows = getattr(self, "consult_rows", []) + [{"prediction": prediction, "judge": judge}]
+        return len(self.consults)
+
+    async def record_shadow(self, consult_id: int, judge: str, prediction: str, confidence: float) -> None:
+        self.consult_rows[consult_id - 1].update(shadow_judge=judge, shadow_prediction=prediction)
 
     async def create_twin_question(self, asker: int, twin: int, team_id, situation: str, proposal: str, confidence: float) -> None:  # noqa: ANN001
         self.twin_questions = getattr(self, "twin_questions", []) + [(asker, twin, team_id, proposal)]

@@ -16,6 +16,8 @@ export interface TwinQuestion {
   created_at: string;
 }
 
+export type TwinVerdict = "approve" | "modify" | "reject";
+
 export interface Consult {
   id: number;
   asker: string;
@@ -23,6 +25,25 @@ export interface Consult {
   confidence: number | null;
   abstained: boolean;
   created_at: string;
+  prediction: TwinVerdict | null;
+  shadow_prediction: TwinVerdict | null;
+  owner_verdict: TwinVerdict | null;
+}
+
+/** 주인이 채점한 자문으로 두 판정기의 적중률 — kNN(답한 것)과 JEV 그림자 */
+export interface JudgeScore {
+  judge: "knn" | "jev";
+  rated: number;
+  hits: number;
+}
+
+export function scoreJudges(consults: Consult[]): JudgeScore[] {
+  const rated = consults.filter((c) => c.owner_verdict);
+  const score = (judge: JudgeScore["judge"], pick: (c: Consult) => TwinVerdict | null): JudgeScore => {
+    const scored = rated.filter((c) => pick(c));
+    return { judge, rated: scored.length, hits: scored.filter((c) => pick(c) === c.owner_verdict).length };
+  };
+  return [score("knn", (c) => c.prediction), score("jev", (c) => c.shadow_prediction)];
 }
 
 function fail(where: string, error: { message: string } | null): never {
@@ -59,7 +80,7 @@ export async function listPendingQuestions(supabase: SupabaseClient, me: number)
 export async function listConsults(supabase: SupabaseClient, me: number): Promise<Consult[]> {
   const { data, error } = await supabase
     .from("consult_log")
-    .select("id, asker_github_id, question, confidence, abstained, created_at")
+    .select("id, asker_github_id, question, confidence, abstained, created_at, prediction, shadow_prediction, owner_verdict")
     .eq("twin_github_id", me)
     .order("created_at", { ascending: false })
     .limit(TWIN_LIST_LIMIT);
@@ -72,5 +93,8 @@ export async function listConsults(supabase: SupabaseClient, me: number): Promis
     confidence: c.confidence as number | null,
     abstained: Boolean(c.abstained),
     created_at: c.created_at as string,
+    prediction: c.prediction as TwinVerdict | null,
+    shadow_prediction: c.shadow_prediction as TwinVerdict | null,
+    owner_verdict: c.owner_verdict as TwinVerdict | null,
   }));
 }

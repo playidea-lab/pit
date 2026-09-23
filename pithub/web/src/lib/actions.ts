@@ -157,3 +157,13 @@ export async function answerTwinQuestion(form: FormData): Promise<void> {
   if (error) throw new Error(`답하기 실패: ${error.message}`);
   revalidatePath("/twin");
 }
+
+/** 트윈의 답 채점 — "당신이라면?" 주인의 판정이 kNN·JEV 두 판정기의 채점 기준이 된다 */
+export async function rateTwinAnswer(form: FormData): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+  const verdict = text(form, "verdict");
+  if (!TWIN_VERDICTS.includes(verdict as (typeof TWIN_VERDICTS)[number])) throw new Error("판정을 골라 주세요.");
+  const { error } = await supabase.rpc("rate_twin_answer", { consult_id: Number(form.get("consult_id")), verdict });
+  if (error) throw new Error(`채점 실패: ${error.message}`);
+  revalidatePath("/twin");
+}

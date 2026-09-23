@@ -142,12 +142,21 @@ class SupabaseGraphMixin:
         return [StoredDecision.model_validate(row) for row in rows]
 
     async def record_consult(
-        self, asker: int, twin: int, question: str, decision_ids: list[str], confidence: float, abstained: bool
-    ) -> None:
-        await self._request(
-            "POST", "/consult_log", headers={"Prefer": "return=minimal"},
+        self, asker: int, twin: int, question: str, decision_ids: list[str], confidence: float, abstained: bool,
+        prediction: str | None = None, judge: str | None = None,
+    ) -> int:  # fmt: skip
+        response = await self._request(
+            "POST", "/consult_log", headers={"Prefer": "return=representation"},
             json={"asker_github_id": asker, "twin_github_id": twin, "question": question,
-                  "decision_ids": decision_ids, "confidence": confidence, "abstained": abstained},
+                  "decision_ids": decision_ids, "confidence": confidence, "abstained": abstained,
+                  "prediction": prediction, "judge": judge},
+        )  # fmt: skip
+        return int(response.json()[0]["id"])
+
+    async def record_shadow(self, consult_id: int, judge: str, prediction: str, confidence: float) -> None:
+        await self._request(
+            "PATCH", "/consult_log", params={"id": f"eq.{consult_id}"}, headers={"Prefer": "return=minimal"},
+            json={"shadow_judge": judge, "shadow_prediction": prediction, "shadow_confidence": confidence},
         )  # fmt: skip
 
     async def create_twin_question(
