@@ -6,7 +6,7 @@ GitHub 계정으로 로그인한다. 인증 로직을 직접 구현하지 않는
 """
 
 import time
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Annotated, TypeVar
 
@@ -14,24 +14,27 @@ from cryptography.fernet import Fernet
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.auth.providers.supabase import SupabaseProvider
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from pydantic import AnyHttpUrl, Field
 from starlette.middleware import Middleware
 
 from pit.server.api import LocalApi
-from pit.server.identity import Caller, NotAuthenticatedError, current_caller
+from pit.server.identity import AccountDirectory, Caller, NotAuthenticatedError, resolve_caller
 from pit.server.jev import JevJudge
 from pit.server.ratelimit import RateLimiter
 from pit.server.records import LinkRef, NodeRef
 from pit.server.repository import DecisionRepository, RepositoryError, SupabaseRepository
 from pit.server.routing import TeamConnectorMiddleware
-from pit.server.settings import GITHUB_SCOPES, ServerSettings
+from pit.server.settings import AUTH_SUPABASE, GITHUB_SCOPES, ServerSettings
 from pit.server.tokencache import CachedTokenVerifier
 from pit.server.tools import DEFAULT_SEARCH_LIMIT, DecisionTools, ToolFailure
 from pit.server.twin import TwinService, TwinUnavailable
 
 SERVER_NAME = "pithub"
+# Supabase 프로젝트의 JWT 서명 (JWKS 로 확인: ES256 비대칭 키)
+SUPABASE_JWT_ALGORITHM = "ES256"
 ResultT = TypeVar("ResultT")
 # `/t/<slug>/mcp` 팀 커넥터 주소를 `/mcp` 로 태운다 (run 과 http_app 양쪽에 같은 목록)
 HTTP_MIDDLEWARE = [Middleware(TeamConnectorMiddleware)]
@@ -86,11 +89,16 @@ own (`mine`) or a specific team (`team:<slug>`).
 STORAGE_NOT_READY = "pithub 저장소가 아직 준비되지 않았습니다. 기록은 저장되지 않았습니다."
 
 
-def _caller() -> Caller:
-    try:
-        return current_caller()
-    except NotAuthenticatedError as e:
-        raise ToolError(str(e)) from e
+def _caller_resolver(directory: AccountDirectory | None) -> Callable[[], Awaitable[Caller]]:
+    """이 서버의 저장소로 토큰의 사용자를 계정으로 잇는 함수 (Supabase 토큰은 계정 번호를 찾아야 한다)"""
+
+    async def caller() -> Caller:
+        try:
+            return await resolve_caller(directory)
+        except NotAuthenticatedError as e:
+            raise ToolError(str(e)) from e
+
+    return caller
 
 
 class OriginScopedGitHubProvider(GitHubProvider):
@@ -105,7 +113,23 @@ class OriginScopedGitHubProvider(GitHubProvider):
         return self.base_url
 
 
-def _build_auth(settings: ServerSettings) -> GitHubProvider:
+class OriginScopedSupabaseProvider(SupabaseProvider):
+    """Supabase Auth(OAuth 2.1 서버)가 로그인과 토큰 발급을 맡고, 이 서버는 토큰만 검증한다.
+    GitHub·이메일 로그인을 모두 받는다. 팀 주소 때문에 보호 리소스는 origin 전체로 광고한다."""
+
+    def _get_resource_url(self, path: str | None = None) -> AnyHttpUrl | None:
+        return self.base_url
+
+
+def _build_auth(settings: ServerSettings) -> GitHubProvider | SupabaseProvider:
+    if settings.auth_mode == AUTH_SUPABASE and settings.supabase_url:
+        return OriginScopedSupabaseProvider(
+            project_url=settings.supabase_url, base_url=settings.base_url, algorithm=SUPABASE_JWT_ALGORITHM
+        )
+    return _build_github_auth(settings)
+
+
+def _build_github_auth(settings: ServerSettings) -> GitHubProvider:
     client_storage = None
     if settings.oauth_storage_dir and settings.oauth_storage_key:
         # 재배포해도 세 클라이언트가 다시 로그인하지 않도록 디스크(Fly 볼륨)에 둔다.
@@ -136,6 +160,7 @@ def _build_repository(settings: ServerSettings) -> DecisionRepository | None:
 def build_server(settings: ServerSettings, repository: DecisionRepository | None = None) -> FastMCP:
     """서버를 조립한다. repository를 주면 그것을 쓰고(테스트), 없으면 설정에서 만든다."""
     repository = repository or _build_repository(settings)
+    _caller = _caller_resolver(repository)
     tools = (
         DecisionTools(repository, RateLimiter(time.monotonic), lambda: datetime.now(timezone.utc))
         if repository is not None
@@ -151,7 +176,7 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
     @server.tool
     async def whoami() -> dict[str, str | int | None]:
         """Show which pithub account this connection is signed in as, and its team status if connected through a team address."""
-        caller = _caller()
+        caller = await _caller()
         result: dict[str, str | int | None] = {"github_id": caller.github_id, "github_login": caller.github_login}
         if tools is not None:
             caller = await _run(tools.with_default_team(caller))
@@ -186,7 +211,7 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
             "supersedes": supersedes or [],
             "about": [ref.model_dump() for ref in about or []], "links": [ref.model_dump() for ref in links or []],
         }  # fmt: skip
-        return await _run(ready().record_decision(_caller(), arguments))
+        return await _run(ready().record_decision(await _caller(), arguments))
 
     @server.tool
     async def search_my_decisions(
@@ -196,7 +221,7 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         scope: Annotated[str | None, Field(description="mine | team | team:<slug>. Default: team when connected through a team address, else mine.")] = None,
     ) -> list[dict[str, object]]:
         """Find how this user (and, through a team address, their team) decided similar things before. Returns short summaries; call get_decision for the full record of the ones you actually use."""
-        return await _run(ready().search_my_decisions(_caller(), query, limit, client, scope))
+        return await _run(ready().search_my_decisions(await _caller(), query, limit, client, scope))
 
     @server.tool
     async def get_decision(
@@ -204,11 +229,11 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         client: Annotated[str | None, Field(description="Which app this is: claude.ai, claude-code, codex, ...")] = None,
     ) -> dict[str, object]:
         """Read one decision in full — this user's own, or one visible to their team. Call it for the records you actually rely on."""
-        return await _run(ready().get_decision(_caller(), decision_id, client))
+        return await _run(ready().get_decision(await _caller(), decision_id, client))
 
     if settings.twin_enabled and repository is not None:
         jev = JevJudge(settings.jev_api_key) if settings.jev_api_key else None
-        _register_twin(server, TwinService(repository, lambda: datetime.now(timezone.utc), jev))
+        _register_twin(server, TwinService(repository, lambda: datetime.now(timezone.utc), jev), _caller)
 
     if repository is not None:
         api = LocalApi(repository)
@@ -229,7 +254,7 @@ async def _run(operation: Awaitable[ResultT]) -> ResultT:
         raise ToolError("pithub 저장소에 닿지 못했습니다. 기록은 저장되지 않았습니다.") from e
 
 
-def _register_twin(server: FastMCP, twin: TwinService) -> None:
+def _register_twin(server: FastMCP, twin: TwinService, _caller: Callable[[], Awaitable[Caller]]) -> None:
     """트윈에게 묻기 (G6) — PITHUB_TWIN_ENABLED 일 때만 도구가 보인다 (D-0009: 본 시험 통과 뒤)"""
 
     @server.tool
@@ -240,6 +265,6 @@ def _register_twin(server: FastMCP, twin: TwinService) -> None:
     ) -> dict[str, object]:
         """Ask how a teammate would likely judge a proposal, from their visible past decisions. Returns a prediction with confidence and evidence, or abstains and asks them. It is a prediction, never their decision."""
         try:
-            return await _run(twin.ask(_caller(), login, proposal, situation))
+            return await _run(twin.ask(await _caller(), login, proposal, situation))
         except TwinUnavailable as e:
             raise ToolError(str(e)) from e

@@ -912,3 +912,46 @@ def test_invite_link_accepts_a_pending_join_request_and_moves_its_records(db):
         db.execute("select public.join_team_with_invite(%s)", (token,))
 
     assert db.execute("select visibility, team_id::text from public.decisions where id = 'PD-waiting'").fetchone() == ("team", team)
+
+
+# --- 이메일 계정 ------------------------------------------------------------------
+
+
+def sign_in_with_email(conn, email: str) -> uuid.UUID:  # noqa: ANN001
+    """이메일(매직 링크)로 처음 로그인했을 때 인증 서버가 하는 일"""
+    user_id = uuid.uuid4()
+    conn.execute("insert into auth.users (id) values (%s)", (user_id,))
+    conn.execute(
+        "insert into auth.identities (user_id, provider, provider_id, identity_data) values (%s, 'email', %s, %s)",
+        (user_id, str(user_id), psycopg.types.json.Jsonb({"email": email})),
+    )
+    return user_id
+
+
+def test_email_signup_gets_a_negative_account_and_a_unique_handle(db):
+    sign_in_with_github(db, ALICE_GITHUB_ID, "kim")
+    first = sign_in_with_email(db, "Kim.Dev+x@corp.example")
+    second = sign_in_with_email(db, "kim@other.example")
+
+    rows = db.execute("select github_id, github_login from public.accounts where github_id < 0 order by github_id desc").fetchall()
+    assert [r[0] < 0 for r in rows] == [True, True]
+    assert rows[0][1] == "kim.devx" and rows[1][1].startswith("kim-")
+    with acting_as(db, "authenticated", first):
+        assert db.execute("select public.current_github_id()").fetchone()[0] == rows[0][0]
+    with acting_as(db, "authenticated", second):
+        assert db.execute("select public.current_github_id()").fetchone()[0] == rows[1][0]
+
+
+def test_email_member_works_like_any_member_in_teams_and_records(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_email(db, "bob@corp.example")
+    bob_account = db.execute("select github_id from public.accounts where github_login = 'bob'").fetchone()[0]
+    with acting_as(db, "authenticated", alice):
+        token = db.execute("select public.create_team_invite(%s)", (team,)).fetchone()[0]
+    with acting_as(db, "authenticated", bob):
+        db.execute("select public.join_team_with_invite(%s)", (token,))
+    _team_draft(db, bob_account, "PD-bob", team, age_days=4)
+
+    with acting_as(db, "authenticated", alice):
+        assert db.execute("select id, github_login from public.team_decisions").fetchall() == [("PD-bob", "bob")]

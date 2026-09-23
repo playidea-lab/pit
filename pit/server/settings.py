@@ -19,6 +19,9 @@ ENV_TWIN_ENABLED = "PITHUB_TWIN_ENABLED"
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 # 선택 판정기 JEV (TypeSafe AI). 없으면 무료 판정기만 쓴다.
 ENV_JEV_API_KEY = "PITHUB_JEV_API_KEY"
+# 로그인 방식: github(GitHub OAuth 중계) | supabase(Supabase Auth OAuth 2.1 — GitHub·이메일)
+ENV_AUTH = "PITHUB_AUTH"
+AUTH_GITHUB, AUTH_SUPABASE = "github", "supabase"
 
 # 개발 기본값 (운영에서는 반드시 환경변수로 지정한다)
 DEV_HOST = "127.0.0.1"
@@ -48,6 +51,7 @@ class ServerSettings:
     oauth_storage_key: str | None = None
     twin_enabled: bool = False
     jev_api_key: str | None = None
+    auth_mode: str = "github"
 
     @property
     def storage_configured(self) -> bool:
@@ -83,6 +87,16 @@ def load_settings() -> ServerSettings:
         supabase_service_key=os.environ.get(ENV_SUPABASE_SERVICE_KEY),
         twin_enabled=os.environ.get(ENV_TWIN_ENABLED, "").strip().lower() in TRUE_VALUES,
         jev_api_key=os.environ.get(ENV_JEV_API_KEY) or None,
+        auth_mode=_auth_mode(),
         oauth_storage_dir=Path(storage_dir) if storage_dir else None,
         oauth_storage_key=storage_key,
     )
+
+
+def _auth_mode() -> str:
+    mode = os.environ.get(ENV_AUTH, AUTH_GITHUB).strip().lower()
+    if mode not in (AUTH_GITHUB, AUTH_SUPABASE):
+        raise SettingsError(f"{ENV_AUTH} 는 {AUTH_GITHUB} 또는 {AUTH_SUPABASE} 여야 합니다.")
+    if mode == AUTH_SUPABASE and not os.environ.get("PITHUB_SUPABASE_URL"):
+        raise SettingsError(f"{ENV_AUTH}={AUTH_SUPABASE} 에는 PITHUB_SUPABASE_URL 이 필요합니다.")
+    return mode

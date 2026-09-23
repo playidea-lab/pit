@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 
-import AuthButton from "@/components/AuthButton";
 import Header from "@/components/Header";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 
@@ -43,11 +42,13 @@ export default async function JoinPage({ params }: PageProps) {
           <p className="label mb-3">pithub 팀 초대</p>
           <h1 className="mb-3 text-3xl font-semibold tracking-tight text-ink">팀에 초대받았습니다</h1>
           <p className="muted max-w-xl leading-relaxed">
-            GitHub로 로그인하면 바로 팀에 들어갑니다. 그다음 쓰는 AI 도구(Claude Code · claude.ai · Codex)에 주소 하나를
+            회사 이메일이나 GitHub로 로그인하면 바로 팀에 들어갑니다. 그다음 쓰는 AI 도구(Claude Code · claude.ai · Codex)에 주소 하나를
             붙이면 끝입니다. 평소처럼 일하면, AI의 제안을 거부하거나 방향을 정한 순간이 팀의 판단으로 쌓입니다.
           </p>
         </div>
-        <AuthButton />
+        <a href={`/login?next=${encodeURIComponent(`/join/${token}`)}`} className="btn btn-primary">
+          로그인하고 들어가기
+        </a>
       </section>
     </main>
   );

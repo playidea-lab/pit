@@ -253,3 +253,6 @@ class InMemoryRepository:
 
     async def consenting_teams(self, team_ids: list[str]) -> set[str]:
         return set(team_ids) & getattr(self, "consent", set())
+
+    async def account_for_user(self, user_id: str):  # noqa: ANN201
+        return getattr(self, "users", {}).get(user_id)

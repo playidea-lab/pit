@@ -173,3 +173,22 @@ class SupabaseGraphMixin:
             return set()
         params = {"id": "in.(" + ",".join(team_ids) + ")", "external_judge_consent_at": "not.is.null", "select": "id"}
         return {str(row["id"]) for row in (await self._request("GET", "/teams", params=params)).json()}
+
+    async def account_for_user(self, user_id: str) -> tuple[int, str] | None:
+        cached = self._accounts_by_user().get(user_id)
+        if cached is not None:
+            return cached
+        params = {"id": f"eq.{user_id}", "select": "github_id,accounts(github_login)", "limit": "1"}
+        rows = (await self._request("GET", "/profiles", params=params)).json()
+        if not rows:
+            return None
+        account = rows[0].get("accounts") or {}
+        found = (int(rows[0]["github_id"]), str(account.get("github_login", "")))
+        self._accounts_by_user()[user_id] = found
+        return found
+
+    def _accounts_by_user(self) -> dict[str, tuple[int, str]]:
+        """사용자 id → 계정. 계정 번호는 바뀌지 않으므로 프로세스 동안 기억해도 된다."""
+        if not hasattr(self, "_account_cache"):
+            self._account_cache: dict[str, tuple[int, str]] = {}
+        return self._account_cache

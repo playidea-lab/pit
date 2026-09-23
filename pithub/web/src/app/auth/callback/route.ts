@@ -8,7 +8,8 @@ import { NextResponse } from "next/server";
 
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
-const SAFE_NEXT = /^\/[A-Za-z0-9_\-/]*$/;
+// 같은 사이트의 경로만: '/'로 시작하고 '//' 나 '\\' 로 시작하지 않으며, 쿼리(동의 화면의 authorization_id)는 허용한다
+const SAFE_NEXT = /^\/(?![/\\])[A-Za-z0-9_\-/.~]*(\?[A-Za-z0-9_\-=&%.~]*)?$/;
 
 /**
  * 사용자가 실제로 접속한 주소. 컨테이너 안에서 request.url 은 http://0.0.0.0:3000/... 이라

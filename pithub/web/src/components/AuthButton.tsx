@@ -30,19 +30,6 @@ export default function AuthButton() {
 
   if (!configured) return null;
 
-  const handleSignIn = async () => {
-    const supabase = createClient();
-    if (!supabase) return;
-    // 로그인 뒤 돌아올 곳: ?next= 가 있으면 그곳, 아니면 지금 보던 페이지 (초대 링크 등)
-    const next = new URLSearchParams(window.location.search).get("next") ?? window.location.pathname;
-    const callback = new URL("/auth/callback", window.location.origin);
-    if (next && next !== "/") callback.searchParams.set("next", next);
-    await supabase.auth.signInWithOAuth({
-      provider: "github",
-      options: { redirectTo: callback.toString(), scopes: GITHUB_SCOPES },
-    });
-  };
-
   if (loading) {
     return <span className="faint text-sm">…</span>;
   }
@@ -65,9 +52,36 @@ export default function AuthButton() {
   }
 
   return (
-    <button onClick={handleSignIn} className="btn btn-primary">
+    <a href={loginHref()} className="btn btn-primary">
+      로그인
+    </a>
+  );
+}
+
+/** 로그인 페이지로 — 지금 보던 곳으로 돌아오게 next 를 붙인다 */
+function loginHref(): string {
+  if (typeof window === "undefined") return "/login";
+  const here = window.location.pathname + window.location.search;
+  const next = new URLSearchParams(window.location.search).get("next") ?? here;
+  return next && next !== "/" && !next.startsWith("/login") ? `/login?next=${encodeURIComponent(next)}` : "/login";
+}
+
+/** GitHub 로그인 — /login 페이지가 쓴다 */
+export function GitHubSignIn({ next }: { next: string | null }) {
+  const signIn = async () => {
+    const supabase = createClient();
+    if (!supabase) return;
+    const callback = new URL("/auth/callback", window.location.origin);
+    if (next) callback.searchParams.set("next", next);
+    await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: { redirectTo: callback.toString(), scopes: GITHUB_SCOPES },
+    });
+  };
+  return (
+    <button onClick={signIn} className="btn btn-secondary w-full justify-center">
       <GitHubMark />
-      GitHub로 로그인
+      GitHub로 계속
     </button>
   );
 }

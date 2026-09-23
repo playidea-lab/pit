@@ -139,6 +139,10 @@ class DecisionRepository(Protocol):
         """외부 판정기(JEV)에 팀 결정을 보내도 된다고 소유자가 동의한 팀들"""
         ...
 
+    async def account_for_user(self, user_id: str) -> tuple[int, str] | None:
+        """Supabase 사용자 id → (계정 번호, 로그인 이름)"""
+        ...
+
     async def find_team(self, slug: str) -> str | None:
         """slug 의 팀 id. 없으면 None."""
         ...

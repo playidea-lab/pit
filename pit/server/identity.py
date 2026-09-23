@@ -1,6 +1,7 @@
 """도구를 호출한 사람의 신원"""
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from fastmcp.server.dependencies import get_access_token, get_http_request
 
@@ -35,8 +36,14 @@ def current_team_slug() -> str | None:
     return str(slug or request.query_params.get(TEAM_QUERY_KEY) or "") or None
 
 
+class AccountDirectory(Protocol):
+    async def account_for_user(self, user_id: str) -> tuple[int, str] | None:
+        """Supabase 사용자 id → (계정 번호, 로그인 이름). 계정이 없으면 None."""
+        ...
+
+
 def current_caller() -> Caller:
-    """현재 요청의 인증된 사용자를 돌려준다
+    """GitHub 로그인 토큰(sub = GitHub 숫자 id, login 포함)의 사용자 — PITHUB_AUTH=github
 
     Raises:
         NotAuthenticatedError: 토큰이 없거나 GitHub 신원이 담겨 있지 않을 때
@@ -46,6 +53,23 @@ def current_caller() -> Caller:
         raise NotAuthenticatedError("인증이 필요합니다.")
     github_id = token.claims.get("sub")
     login = token.claims.get("login")
-    if github_id is None or not login:
+    if github_id is None or not login or not str(github_id).isdigit():
         raise NotAuthenticatedError("토큰에 GitHub 신원이 없습니다.")
     return Caller(github_id=int(github_id), github_login=str(login), team_slug=current_team_slug())
+
+
+async def resolve_caller(directory: AccountDirectory | None) -> Caller:
+    """토큰의 사용자를 계정으로 — GitHub 토큰이면 그대로, Supabase 토큰(sub = 사용자 UUID)이면 계정 번호를 찾는다.
+    Supabase 로그인은 GitHub·이메일을 모두 받는다 (PITHUB_AUTH=supabase)."""
+    token = get_access_token()
+    if token is None:
+        raise NotAuthenticatedError("인증이 필요합니다.")
+    subject = str(token.claims.get("sub") or "")
+    if subject.isdigit() and token.claims.get("login"):
+        return current_caller()
+    if not subject or directory is None:
+        raise NotAuthenticatedError("토큰에 사용자 신원이 없습니다.")
+    found = await directory.account_for_user(subject)
+    if found is None:
+        raise NotAuthenticatedError("pithub 계정을 찾지 못했습니다. pithub 웹에 한 번 로그인한 뒤 다시 연결하세요.")
+    return Caller(github_id=found[0], github_login=found[1], team_slug=current_team_slug())
