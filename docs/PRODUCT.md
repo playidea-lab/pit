@@ -60,7 +60,7 @@ AI 세션 원문 전부 (Claude Code · Codex)          판단 그래프 (확인
 로컬 판단 그래프 (본인만)          ── push ──→    범위: private · team · friends · public
                                                   경계: DB 권한 (RLS)
 claude.ai / Claude Code / Codex  ── MCP ───→     트윈 (묻는 사람이 볼 수 있는 만큼만 앎)
-  (결정 + about 노드 + links 엣지)                 JEV 판정기 (예/아니오 · 확신도)
+  (결정 + about 노드 + links 엣지)                 판정기 (기본: 세션 LLM · 선택: JEV)
 ```
 
 - **같은 규약, 두 경로.** MCP와 push가 같은 모양을 보낸다. 로컬은 원문을 보므로 더 많이·정확히 뽑을 뿐이다.
