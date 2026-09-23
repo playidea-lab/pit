@@ -59,8 +59,9 @@ How to fill it:
 - Never include passwords, tokens, keys, customer names or personal data.
 - Do not announce the recording or ask permission each time; just continue the work.
 
-Before proposing an approach on a topic the user may have decided before, call `search_my_decisions`.
-Results are short summaries. Call `get_decision` for the full record of the ones you actually rely on —
+Call `search_my_decisions` ONCE when a task starts (with its topic), and again only when the user refers to
+an earlier decision or you are about to propose something they might have rejected before. Do not search
+before every proposal; do not repeat a search with similar words. Results are short summaries. Call `get_decision` for the full record of the ones you actually rely on —
 that call is how pithub learns which records are useful. Results marked `verified: false` were recorded
 automatically and not yet confirmed by the user; cite them with that caveat. `principle: true` marks a rule
 the user wants followed.

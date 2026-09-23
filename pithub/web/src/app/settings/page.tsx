@@ -5,8 +5,18 @@ import Header from "@/components/Header";
 import { deleteMyAccount, exportMyData, issueToken, revokeToken } from "@/lib/account-actions";
 import { getMyAccount } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
+import { usageSummary } from "@/lib/usage";
 
 export const dynamic = "force-dynamic";
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="label mb-0.5">{label}</p>
+      <p className="text-ink">{value}</p>
+    </div>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -21,7 +31,8 @@ export default async function SettingsPage() {
   const user = await getUser();
   if (!user) redirect("/?next=/settings");
   const supabase = await createServerSupabaseClient();
-  const account = await getMyAccount(supabase);
+  const [account, usage] = await Promise.all([getMyAccount(supabase), usageSummary(supabase)]);
+  const usedPct = usage.returned === 0 ? null : Math.round((usage.used / usage.returned) * 100);
   const { data: tokens } = await supabase
     .from("api_tokens")
     .select("id, name, created_at, last_used_at, revoked_at")
@@ -38,6 +49,28 @@ export default async function SettingsPage() {
           <p className="muted text-sm">
             GitHub <b className="text-ink">{account?.github_login ?? "-"}</b> 로 로그인돼 있습니다.
           </p>
+        </Section>
+
+        <Section title={`사용량 · 최근 ${usage.days}일`}>
+          <p className="muted mb-3 text-sm">
+            AI가 pithub를 얼마나 부르고, 돌려준 결과를 실제로 읽었는지. 검색이 잦은데 읽힌 비율이 낮으면 토큰만
+            쓰는 것입니다.
+          </p>
+          <div className="mb-3 flex flex-wrap gap-x-8 gap-y-2">
+            <Stat label="검색" value={`${usage.searches}회`} />
+            <Stat label="돌려준 결과" value={`${usage.returned}건`} />
+            <Stat label="실제로 읽힘" value={usedPct === null ? "-" : `${usage.used}건 · ${usedPct}%`} />
+            <Stat label="기록" value={`${usage.records}건`} />
+          </div>
+          {usage.byClient.length > 0 && (
+            <ul className="faint text-xs">
+              {usage.byClient.map((c) => (
+                <li key={c.client}>
+                  {c.client} — 검색 {c.searches} · 기록 {c.records}
+                </li>
+              ))}
+            </ul>
+          )}
         </Section>
 
         <Section title="내 데이터 내려받기">
