@@ -158,3 +158,9 @@ class SupabaseGraphMixin:
             json={"asker_github_id": asker, "twin_github_id": twin, "team_id": team_id, "situation": situation,
                   "proposal": proposal, "confidence": confidence},
         )  # fmt: skip
+
+    async def consenting_teams(self, team_ids: list[str]) -> set[str]:
+        if not team_ids:
+            return set()
+        params = {"id": "in.(" + ",".join(team_ids) + ")", "external_judge_consent_at": "not.is.null", "select": "id"}
+        return {str(row["id"]) for row in (await self._request("GET", "/teams", params=params)).json()}

@@ -21,6 +21,7 @@ from starlette.middleware import Middleware
 
 from pit.server.api import LocalApi
 from pit.server.identity import Caller, NotAuthenticatedError, current_caller
+from pit.server.jev import JevJudge
 from pit.server.ratelimit import RateLimiter
 from pit.server.records import LinkRef, NodeRef
 from pit.server.repository import DecisionRepository, RepositoryError, SupabaseRepository
@@ -204,7 +205,8 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         return await _run(ready().get_decision(_caller(), decision_id, client))
 
     if settings.twin_enabled and repository is not None:
-        _register_twin(server, TwinService(repository, lambda: datetime.now(timezone.utc)))
+        jev = JevJudge(settings.jev_api_key) if settings.jev_api_key else None
+        _register_twin(server, TwinService(repository, lambda: datetime.now(timezone.utc), jev))
 
     if repository is not None:
         api = LocalApi(repository)

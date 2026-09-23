@@ -113,3 +113,14 @@ export async function erasePersona(form: FormData): Promise<void> {
   if (error) throw new Error(`페르소나 삭제 실패: ${error.message}`);
   revalidatePath(`/t/${slug}`);
 }
+
+/** 외부 판정기 동의 — 팀 소유자만. 켜면 트윈이 이 팀의 결정을 JEV(TypeSafe AI)로 보내 판정받는다. */
+export async function setJudgeConsent(form: FormData): Promise<void> {
+  const teamId = text(form, "team_id");
+  const slug = text(form, "slug");
+  const consent = text(form, "consent") === "on";
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase.rpc("set_team_judge_consent", { team: teamId, consent });
+  if (error) throw new Error(`판정기 동의 변경 실패: ${error.message}`);
+  revalidatePath(`/t/${slug}`);
+}

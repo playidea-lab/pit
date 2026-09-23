@@ -17,6 +17,8 @@ ENV_OAUTH_STORAGE_KEY = "PITHUB_OAUTH_STORAGE_KEY"
 # 트윈에게 묻기(G6)를 여는 스위치 — D-0009: LLM 판정기 본 시험을 통과하기 전에는 끈다
 ENV_TWIN_ENABLED = "PITHUB_TWIN_ENABLED"
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+# 선택 판정기 JEV (TypeSafe AI). 없으면 무료 판정기만 쓴다.
+ENV_JEV_API_KEY = "PITHUB_JEV_API_KEY"
 
 # 개발 기본값 (운영에서는 반드시 환경변수로 지정한다)
 DEV_HOST = "127.0.0.1"
@@ -45,6 +47,7 @@ class ServerSettings:
     oauth_storage_dir: Path | None = None
     oauth_storage_key: str | None = None
     twin_enabled: bool = False
+    jev_api_key: str | None = None
 
     @property
     def storage_configured(self) -> bool:
@@ -79,6 +82,7 @@ def load_settings() -> ServerSettings:
         supabase_url=os.environ.get(ENV_SUPABASE_URL),
         supabase_service_key=os.environ.get(ENV_SUPABASE_SERVICE_KEY),
         twin_enabled=os.environ.get(ENV_TWIN_ENABLED, "").strip().lower() in TRUE_VALUES,
+        jev_api_key=os.environ.get(ENV_JEV_API_KEY) or None,
         oauth_storage_dir=Path(storage_dir) if storage_dir else None,
         oauth_storage_key=storage_key,
     )

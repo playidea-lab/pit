@@ -17,6 +17,8 @@ export interface Team {
   slug: string;
   name: string;
   created_at: string;
+  /** 외부 판정기(JEV)에 팀 결정을 보내도 된다고 소유자가 동의한 시각 (D-0009 §7) */
+  external_judge_consent_at?: string | null;
 }
 
 export interface TeamMember {

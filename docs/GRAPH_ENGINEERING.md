@@ -58,7 +58,7 @@ decision_links   (from_decision → to_decision, relation[supersedes|conflicts_w
 | **G4 그래프 읽기** ✅ | 주제 1-hop 확장 검색, `/topic/<id>`, `get_decision` 에 연결 결정 | claude.ai에서 주제로 물으면 개발자 판단이 근거로 | 2~3일 |
 | **G5 충돌** ✅ (규칙 판정, JEV는 선택 자리만) | 같은 주제 반대 판정 → `conflicts_with` 후보 → 정리함 확인 | 기획·개발의 상반된 결정이 정리함에 | 2일 |
 | **G7 오프라인 시험** ⚠️ 무료 판정기까지 (`pit twin eval`) | 282건 시간 순 분할, 기록 있는 판정 vs 없는 판정 | 구조화된 리포트 | 2일 |
-| **G6 트윈 L2** ✅ 구현 · 🔒 `PITHUB_TWIN_ENABLED` 로 꺼 둠 (본 시험 통과 뒤 연다) | `ask_twin(login, proposal)`: 근거 수집 → 판정기(기본 세션 LLM, 선택 JEV) → 낮으면 본인 정리함에 질문 → 답이 결정·라벨 · "내 트윈" 화면 | G7 통과 | 3~4일 |
+| **G6 트윈 L2** ✅ 파일럿에서 열림 (2026-09-24 사용자 결정) · 판정기 JEV(팀 동의)/kNN | `ask_twin(login, proposal)`: 근거 수집 → 판정기(기본 세션 LLM, 선택 JEV) → 낮으면 본인 정리함에 질문 → 답이 결정·라벨 · "내 트윈" 화면 | G7 통과 | 3~4일 |
 
 합계 약 15~18일. **G0~G2를 도그푸딩 첫 주에** — 처음부터 노드·엣지가 쌓여야 한다.
 

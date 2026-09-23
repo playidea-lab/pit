@@ -5,7 +5,14 @@ import DecisionCard from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import { getMyAccount } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
-import { approveMember, erasePersona, inviteMember, leaveTeam, removeMember } from "@/lib/team-actions";
+import {
+  approveMember,
+  erasePersona,
+  inviteMember,
+  leaveTeam,
+  removeMember,
+  setJudgeConsent,
+} from "@/lib/team-actions";
 import {
   departedAuthors,
   getTeamBySlug,
@@ -169,6 +176,25 @@ export default async function TeamPage({ params }: PageProps) {
             </div>
           )}
         </div>
+
+        {isOwner && (
+          <form action={setJudgeConsent} className="card flex flex-wrap items-center gap-3">
+            <input type="hidden" name="team_id" value={team.id} />
+            <input type="hidden" name="slug" value={team.slug} />
+            <input type="hidden" name="consent" value={team.external_judge_consent_at ? "off" : "on"} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-ink">트윈 판정기 · JEV</p>
+              <p className="muted text-xs">
+                {team.external_judge_consent_at
+                  ? "켜짐 — 트윈이 판정할 때 이 팀의 결정 요약(이름 없이)을 TypeSafe AI로 보냅니다."
+                  : "꺼짐 — 트윈은 서버 안의 무료 판정기만 씁니다. 켜면 결정 요약(이름 없이)이 TypeSafe AI로 전송됩니다."}
+              </p>
+            </div>
+            <button className={team.external_judge_consent_at ? "btn btn-secondary h-8 px-3" : "btn btn-primary h-8 px-3"}>
+              {team.external_judge_consent_at ? "끄기" : "동의하고 켜기"}
+            </button>
+          </form>
+        )}
 
         <div className="card">
           <h2 className="mb-2 text-[15px] font-semibold text-ink">구성원</h2>

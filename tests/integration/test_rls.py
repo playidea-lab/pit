@@ -836,3 +836,19 @@ def test_twin_question_is_seen_by_asker_and_owner_and_answered_only_by_the_owner
     with acting_as(db, "authenticated", alice):
         assert ids(db, "select id from public.team_decisions") == [decision_id]
         assert db.execute("select answer_decision_id from public.twin_questions").fetchone()[0] == decision_id
+
+
+def test_only_team_owner_can_consent_to_the_external_judge(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", bob):
+        db.execute("select public.set_team_judge_consent(%s, true)", (team,))
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.set_team_judge_consent(%s, true)", (team,))
+    assert db.execute("select external_judge_consent_by from public.teams").fetchone()[0] == ALICE_GITHUB_ID
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.set_team_judge_consent(%s, false)", (team,))
+    assert db.execute("select external_judge_consent_at from public.teams").fetchone()[0] is None

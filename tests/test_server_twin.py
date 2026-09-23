@@ -99,3 +99,64 @@ def test_ask_twin_tool_is_hidden_unless_enabled():
 
     assert "ask_twin" not in names(False)
     assert "ask_twin" in names(True)
+
+
+
+# --- JEV 판정기 (선택, 팀 동의) ----------------------------------------------------
+
+
+def _jev(status: int = 200, choice: str = "approve", confidence: float = 0.93):  # noqa: ANN202
+    import httpx
+
+    from pit.server.jev import JevJudge
+
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        seen.append(json.loads(request.content))
+        body = {"answers": {"verdict": {"type": "choice", "choice": choice, "confidence": confidence,
+                                         "probabilities": {choice: confidence}}}}  # fmt: skip
+        return httpx.Response(status, json=body)
+
+    return JevJudge("test-key", httpx.AsyncClient(transport=httpx.MockTransport(handler))), seen
+
+
+def test_consenting_team_uses_jev_with_evidence_only_and_no_names():
+    rows = [_decision(i, "평가를 무작위 분할로 한다", "reject") for i in range(3)]
+    repository = _repository(rows)
+    repository.consent = {TEAM}
+    jev, seen = _jev(choice="approve", confidence=0.93)
+
+    answer = asyncio.run(TwinService(repository, lambda: NOW, jev).ask(ALICE, "bob", "평가를 무작위 분할로", "평가"))
+
+    assert (answer["judge"], answer["prediction"], answer["confidence"]) == ("jev", "approve", 0.93)
+    sent = str(seen[0])
+    assert "bob" not in sent and "alice" not in sent and "평가를 무작위 분할로 한다" in sent
+
+
+def test_without_consent_jev_is_never_called():
+    repository = _repository([_decision(i, "평가를 무작위 분할로 한다", "reject") for i in range(3)])
+    jev, seen = _jev()
+
+    answer = asyncio.run(TwinService(repository, lambda: NOW, jev).ask(ALICE, "bob", "평가를 무작위 분할로", "평가"))
+
+    assert answer["judge"] == "knn" and seen == []
+
+
+def test_jev_failure_falls_back_to_knn():
+    repository = _repository([_decision(i, "평가를 무작위 분할로 한다", "reject") for i in range(3)])
+    repository.consent = {TEAM}
+    jev, _ = _jev(status=529)
+
+    answer = asyncio.run(TwinService(repository, lambda: NOW, jev).ask(ALICE, "bob", "평가를 무작위 분할로", "평가"))
+
+    assert (answer["judge"], answer["prediction"]) == ("knn", "reject")
+
+
+def test_jev_response_with_unknown_choice_is_rejected():
+    from pit.server.jev import JevError, parse_response
+
+    with pytest.raises(JevError):
+        parse_response({"answers": {"verdict": {"choice": "maybe", "confidence": 1.0}}})

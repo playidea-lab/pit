@@ -128,6 +128,10 @@ class DecisionRepository(Protocol):
         self, asker: int, twin: int, team_id: str | None, situation: str, proposal: str, confidence: float
     ) -> None: ...
 
+    async def consenting_teams(self, team_ids: list[str]) -> set[str]:
+        """외부 판정기(JEV)에 팀 결정을 보내도 된다고 소유자가 동의한 팀들"""
+        ...
+
     async def find_team(self, slug: str) -> str | None:
         """slug 의 팀 id. 없으면 None."""
         ...

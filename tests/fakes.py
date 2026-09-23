@@ -244,3 +244,6 @@ class InMemoryRepository:
 
     async def create_twin_question(self, asker: int, twin: int, team_id, situation: str, proposal: str, confidence: float) -> None:  # noqa: ANN001
         self.twin_questions = getattr(self, "twin_questions", []) + [(asker, twin, team_id, proposal)]
+
+    async def consenting_teams(self, team_ids: list[str]) -> set[str]:
+        return set(team_ids) & getattr(self, "consent", set())
