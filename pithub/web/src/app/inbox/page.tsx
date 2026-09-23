@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { VerdictBadge, formatDate } from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import VerifyBar from "@/components/VerifyBar";
+import { resolveConflict } from "@/lib/actions";
 import {
   getMyAccount,
   leaksVerdict,
@@ -13,6 +14,7 @@ import {
   weeklySample,
   type Decision,
 } from "@/lib/decisions";
+import { listConflictCandidates, type ConflictCandidate } from "@/lib/graph";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +50,38 @@ function Item({ decision }: { decision: Decision }) {
   );
 }
 
+function Side({ label, decision }: { label: string; decision: ConflictCandidate["a"] }) {
+  return (
+    <Link href={`/d/${decision.id}`} className="block rounded-lg border border-border p-3 hover:bg-[var(--accent-soft)]/30">
+      <div className="mb-1 flex items-center gap-2 text-xs">
+        <VerdictBadge verdict={decision.verdict} chosen={decision.chosen} />
+        <span className="text-ink">{decision.mine ? "나" : decision.author}</span>
+        <span className="faint">{formatDate(decision.decided_at)}</span>
+        <span className="faint ml-auto">{label}</span>
+      </div>
+      <p className="text-sm text-ink">{decision.proposal}</p>
+      <p className="muted mt-1 text-xs">&ldquo;{decision.human_quote}&rdquo;</p>
+    </Link>
+  );
+}
+
+function Conflict({ conflict }: { conflict: ConflictCandidate }) {
+  return (
+    <article className="card space-y-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Side label="A" decision={conflict.a} />
+        <Side label="B" decision={conflict.b} />
+      </div>
+      <form action={resolveConflict} className="flex flex-wrap gap-2">
+        <input type="hidden" name="link_id" value={conflict.id} />
+        <button name="action" value="confirm" className="btn btn-primary h-8 px-3">충돌 맞음 · 이야기가 필요</button>
+        <button name="action" value="supersede" className="btn btn-secondary h-8 px-3">나중 결정이 먼저 것을 뒤집음</button>
+        <button name="action" value="dismiss" className="btn btn-ghost h-8 px-3">충돌 아님</button>
+      </form>
+    </article>
+  );
+}
+
 /**
  * 정리함 — 기록은 자동으로 쌓이고 검색에 바로 쓰인다. 여기에는 사람이 봐 둘 만한 것만 온다:
  * 이번 주 표본 5건(품질 측정), 거부·수정 판정, 가림이 일어난 것. 나머지 승인 기록은 손댈 일이 없다.
@@ -58,6 +92,7 @@ export default async function TriagePage() {
 
   const supabase = await createServerSupabaseClient();
   const [account, unverified] = await Promise.all([getMyAccount(supabase), listUnverified(supabase)]);
+  const conflicts = account ? await listConflictCandidates(supabase, account.github_id) : [];
   const sample = weeklySample(unverified);
   const sampleIds = new Set(sample.map((d) => d.id));
   const flagged = unverified.filter((d) => needsAttention(d) && !sampleIds.has(d.id));
@@ -73,6 +108,22 @@ export default async function TriagePage() {
             기록은 자동으로 쌓이고 검색에 바로 쓰입니다. 여기에는 봐 둘 만한 것만 옵니다.
           </p>
         </div>
+
+        {conflicts.length > 0 && (
+          <div>
+            <div className="mb-3 flex items-baseline gap-3">
+              <h2 className="text-[15px] font-semibold text-ink">충돌 후보</h2>
+              <span className="faint text-xs">
+                같은 주제에서 반대로 판정된 결정 · {conflicts.length}건 · 어느 쪽이 서는지 정해 두면 팀의 AI가 헷갈리지 않습니다
+              </span>
+            </div>
+            <div className="space-y-3">
+              {conflicts.map((c) => (
+                <Conflict key={c.id} conflict={c} />
+              ))}
+            </div>
+          </div>
+        )}
 
         {unverified.length === 0 ? (
           <div className="empty">

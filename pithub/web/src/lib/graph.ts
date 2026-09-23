@@ -120,3 +120,32 @@ export async function linksAmong(supabase: SupabaseClient, ids: string[]): Promi
   if (error) fail("linksAmong", error);
   return (data ?? []) as GraphLink[];
 }
+
+export interface ConflictCandidate {
+  id: number;
+  a: GraphDecision;
+  b: GraphDecision;
+}
+
+const CONFLICT_LIST_LIMIT = 30;
+
+/** 처리할 충돌 후보 — 양 끝을 모두 볼 수 있고(RLS), 한쪽이 내 결정인 것 (G5) */
+export async function listConflictCandidates(supabase: SupabaseClient, me: number): Promise<ConflictCandidate[]> {
+  const { data, error } = await supabase
+    .from("decision_links")
+    .select("id, from_decision, to_decision")
+    .eq("relation", "conflicts_with")
+    .eq("status", "proposed")
+    .order("created_at", { ascending: false })
+    .limit(CONFLICT_LIST_LIMIT);
+  if (error) fail("listConflictCandidates", error);
+  const rows = (data ?? []) as { id: number; from_decision: string; to_decision: string }[];
+  const decisions = new Map(
+    (await loadDecisions(supabase, rows.flatMap((r) => [r.from_decision, r.to_decision]), me)).map((d) => [d.id, d]),
+  );
+  return rows.flatMap((r) => {
+    const a = decisions.get(r.from_decision);
+    const b = decisions.get(r.to_decision);
+    return a && b && (a.mine || b.mine) ? [{ id: r.id, a, b }] : [];
+  });
+}

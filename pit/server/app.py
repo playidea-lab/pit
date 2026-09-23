@@ -59,6 +59,8 @@ How to fill it:
 - `about`: 1-3 short topic names this decision is about (e.g. "evaluation split"), plus the main file or feature
   as kind "artifact" when there is one. Reuse the exact names you saw in search results `topics` so that
   decisions on the same subject connect. Use `links` for "depends_on" / "conflicts_with" another decision id.
+- If the result has `possible_conflicts`, tell the user in one line that this seems to contradict those earlier
+  decisions (call `get_decision` to say whose and what), so they can decide which stands.
 - If the user gave the same verdict on the same proposal again within days, still call: the server folds it.
 - `rationale`: only what the user actually said. Do not guess.
 - Never include passwords, tokens, keys, customer names or personal data.

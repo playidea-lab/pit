@@ -843,3 +843,45 @@ def test_get_decision_shows_topics_and_related_decisions_the_caller_can_read():
     assert detail["related"] == [
         {"id": base, "relation": "depends_on", "direction": "out", "status": "confirmed", "proposal": "시계열로 간다"}
     ]
+
+
+
+# --- G5: 충돌 후보 ---------------------------------------------------------------
+
+
+def test_proposal_similarity_works_for_korean_and_ignores_spacing():
+    from pit.server.conflicts import proposal_similarity
+
+    assert proposal_similarity("평가를 무작위 분할로", "평가를  무작위분할로") == 1.0
+    assert proposal_similarity("평가를 무작위 분할로", "로그인 화면 색상 변경") < 0.1
+
+
+def test_opposite_verdict_on_the_same_topic_is_proposed_as_a_conflict_and_reported():
+    """기획자가 승인한 것을 개발자가 같은 주제에서 거부하면, 기록하는 순간 충돌 후보가 된다"""
+    repository = _team_repository()
+    tools = _tools(repository)
+    plan = _run(tools.record_decision(BOB_IN_PILAB, _arguments(
+        proposal="평가를 무작위 분할로 한다", verdict="approve", reject_kind=None, about=[{"name": "평가 분할"}],
+    )))["id"]  # fmt: skip
+    repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
+
+    result = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(
+        proposal="평가를 무작위 분할로 하자", verdict="reject", about=[{"name": "평가 분할"}],
+    )))  # fmt: skip
+
+    assert result["possible_conflicts"] == [plan]
+    assert (result["id"], plan, "conflicts_with", "proposed") in repository.links
+
+
+def test_no_conflict_for_same_verdict_unrelated_proposal_unreadable_or_explicitly_superseded():
+    repository = _team_repository()
+    tools = _tools(repository)
+    same = _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="평가를 무작위 분할로", about=[{"name": "평가 분할"}])))["id"]
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="로그인 버튼 색", verdict="approve", reject_kind=None, about=[{"name": "평가 분할"}])))
+    repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="평가를 무작위 분할로 간다", verdict="approve", reject_kind=None, about=[{"name": "평가 분할"}])))  # 유예 중
+
+    result = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(proposal="평가를 무작위 분할로", about=[{"name": "평가 분할"}])))
+
+    assert "possible_conflicts" not in result
+    assert same  # 같은 거부끼리는 충돌이 아니다

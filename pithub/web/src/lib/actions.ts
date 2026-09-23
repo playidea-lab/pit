@@ -111,3 +111,16 @@ export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
   redirect("/");
 }
+
+const CONFLICT_ACTIONS = ["confirm", "dismiss", "supersede"] as const;
+
+/** 충돌 후보 처리 — 충돌 맞음 / 충돌 아님 / 나중 결정이 먼저 것을 뒤집음 (G5). DB 함수가 권한을 확인한다. */
+export async function resolveConflict(form: FormData): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+  const linkId = Number(form.get("link_id"));
+  const action = text(form, "action");
+  if (!CONFLICT_ACTIONS.includes(action as (typeof CONFLICT_ACTIONS)[number])) throw new Error("알 수 없는 처리입니다.");
+  const { error } = await supabase.rpc("resolve_conflict", { link_id: linkId, action });
+  if (error) throw new Error(`충돌 처리 실패: ${error.message}`);
+  revalidatePath("/inbox");
+}

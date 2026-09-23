@@ -696,3 +696,60 @@ def test_supersedes_array_is_mirrored_into_links_and_nodes_are_unique_per_namesp
     db.execute("insert into public.accounts (github_id, github_login) values (%s, 'bob') on conflict do nothing", (BOB_GITHUB_ID,))
     _node(db, "평가 분할", owner=BOB_GITHUB_ID)
     assert db.execute("select count(*) from public.nodes").fetchone()[0] == 2
+
+
+# --- G5: 충돌 후보 처리 ------------------------------------------------------------
+
+
+def _conflict(conn, a: str, b: str) -> int:  # noqa: ANN001
+    return int(conn.execute(
+        "insert into public.decision_links (from_decision, to_decision, relation, status) values (%s, %s, 'conflicts_with', 'proposed') returning id",
+        (a, b),
+    ).fetchone()[0])
+
+
+def test_conflict_can_be_resolved_only_by_an_owner_of_either_end(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-a", team, age_days=4)
+    _team_draft(db, BOB_GITHUB_ID, "PD-b", team, age_days=4)
+    confirm_me, dismiss_me = _conflict(db, "PD-b", "PD-a"), _conflict(db, "PD-a", "PD-b")
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    carol = sign_in_with_github(db, 3003, "carol")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", carol):
+        db.execute("select public.resolve_conflict(%s, 'confirm')", (confirm_me,))
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.resolve_conflict(%s, 'confirm')", (confirm_me,))
+        db.execute("select public.resolve_conflict(%s, 'dismiss')", (dismiss_me,))
+
+    assert db.execute("select id, status from public.decision_links").fetchall() == [(confirm_me, "confirmed")]
+
+
+def test_supersede_turns_the_conflict_into_an_overturn_by_the_newer_decisions_author(db):
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-old")
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-new")
+    db.execute("update public.decisions set decided_at = now() - interval '10 days' where id = 'PD-old'")
+    link = _conflict(db, "PD-old", "PD-new")
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.resolve_conflict(%s, 'supersede')", (link,))
+
+    assert db.execute("select supersedes from public.decisions where id = 'PD-new'").fetchone()[0] == ["PD-old"]
+    assert db.execute("select from_decision, to_decision, relation from public.decision_links").fetchall() == [
+        ("PD-new", "PD-old", "supersedes")
+    ]
+
+
+def test_supersede_is_refused_to_the_author_of_the_older_decision(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-old", team, age_days=10)
+    _team_draft(db, BOB_GITHUB_ID, "PD-new", team, age_days=4)
+    db.execute("update public.decisions set decided_at = now() - interval '10 days' where id = 'PD-old'")
+    link = _conflict(db, "PD-old", "PD-new")
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", alice):
+        db.execute("select public.resolve_conflict(%s, 'supersede')", (link,))

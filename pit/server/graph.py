@@ -6,9 +6,10 @@
 
 import re
 import unicodedata
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
 
+from pit.server.conflicts import conflict_candidates
 from pit.server.records import SUMMARY_CHARS, RecordDecisionInput, StoredDecision
 from pit.server.repository import DecisionRepository
 from pit.transcripts.redact import RedactionRules, redact
@@ -19,6 +20,9 @@ KIND_PROJECT = "project"
 _NAME_SYNTAX = re.compile(r'[,(){}"\\*%]')
 # 모델이 판정을 확인하지 않고 주장한 충돌은 후보로만 둔다 — 사람이 정리함에서 확인한다
 LINK_STATUS = {"depends_on": "confirmed", "conflicts_with": "proposed"}
+# 충돌을 찾을 때 훑는 이웃 결정 수와, 한 번에 올리는 후보 수
+CONFLICT_SCAN_LIMIT = 60
+MAX_CONFLICTS = 3
 
 
 def normalize_node_name(name: str) -> str:
@@ -44,8 +48,12 @@ class Namespace:
 @dataclass
 class GraphWriter:
     repository: DecisionRepository
-    # 호출자가 이 결정을 읽을 수 있는가 — 남의 결정에 링크를 걸 때 권한 밖을 가리키지 못하게
-    can_link_to: Callable[[str], Awaitable[bool]]
+    # 호출자가 이 결정을 읽을 수 있는가 — 링크와 충돌 후보가 권한 밖을 가리키지 못하게
+    readable: Callable[[StoredDecision], bool]
+
+    async def _can_link_to(self, decision_id: str) -> bool:
+        target = await self.repository.get_by_id(decision_id)
+        return target is not None and self.readable(target)
 
     async def attach(self, decision: StoredDecision, payload: RecordDecisionInput) -> dict[str, object]:
         """노드를 찾거나 만들어 매달고, 링크를 잇는다. 결과는 도구 응답에 싣는 짧은 요약."""
@@ -68,11 +76,12 @@ class GraphWriter:
 
         linked, skipped = [], []
         for link in payload.links:
-            if link.to != decision.id and await self.can_link_to(link.to):
+            if link.to != decision.id and await self._can_link_to(link.to):
                 linked.append((link.to, link.relation, LINK_STATUS[link.relation]))
             else:
                 skipped.append(link.to)
         await self.repository.add_links(decision.id, linked, decision.owner_github_id)
+        conflicts = await self._propose_conflicts(decision, node_ids, {to for to, _, _ in linked})
         # 빈 값은 싣지 않는다 — 도구 응답은 세션 컨텍스트에 남는다
         summary: dict[str, object] = {}
         if topics:
@@ -81,7 +90,21 @@ class GraphWriter:
             summary["links"] = len(linked)
         if skipped:
             summary["links_skipped"] = skipped
+        if conflicts:
+            summary["possible_conflicts"] = conflicts
         return summary
+
+    async def _propose_conflicts(self, decision: StoredDecision, node_ids: list[str], already: set[str]) -> list[str]:
+        """같은 노드의 결정 중 반대로 판정된 것을 충돌 후보로 올린다 (G5) — 볼 수 있는 것만"""
+        if not node_ids:
+            return []
+        neighbor_ids = await self.repository.decision_ids_on_nodes(node_ids, CONFLICT_SCAN_LIMIT)
+        neighbors = [d for d in await self.repository.get_many(neighbor_ids) if self.readable(d)]
+        found = [c for c in conflict_candidates(decision, neighbors) if c not in already][:MAX_CONFLICTS]
+        await self.repository.add_links(
+            decision.id, [(other, "conflicts_with", "proposed") for other in found], decision.owner_github_id
+        )
+        return found
 
 
 @dataclass

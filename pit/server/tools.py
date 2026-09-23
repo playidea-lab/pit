@@ -109,13 +109,9 @@ class DecisionTools:
         return result
 
     async def _attach_graph(self, caller: Caller, decision: StoredDecision, payload: RecordDecisionInput) -> dict[str, object]:
-        """결정을 그래프에 매단다. 링크는 호출자가 읽을 수 있는 결정만 가리킬 수 있다."""
-
-        async def can_link_to(decision_id: str) -> bool:
-            target = await self.repository.get_by_id(decision_id)
-            return target is not None and await self._can_read(caller, target)
-
-        return await GraphWriter(self.repository, can_link_to).attach(decision, payload)
+        """결정을 그래프에 매단다. 링크와 충돌 후보는 호출자가 읽을 수 있는 결정만 가리킨다."""
+        teams = dict(await self.repository.member_teams(caller.github_id))
+        return await GraphWriter(self.repository, self._reader(caller, teams).readable).attach(decision, payload)
 
     async def _apply_scope(self, caller: Caller, payload: RecordDecisionInput, decision: StoredDecision) -> StoredDecision:
         """팀 커넥터로 들어왔으면 팀 범위(주소가 힌트보다 세다), 아니면 프로젝트별 기본값, 없으면 private.
