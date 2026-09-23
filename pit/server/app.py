@@ -25,6 +25,7 @@ from pit.server.ratelimit import RateLimiter
 from pit.server.repository import DecisionRepository, RepositoryError, SupabaseRepository
 from pit.server.routing import TeamConnectorMiddleware
 from pit.server.settings import GITHUB_SCOPES, ServerSettings
+from pit.server.tokencache import CachedTokenVerifier
 from pit.server.tools import DEFAULT_SEARCH_LIMIT, DecisionTools, ToolFailure
 
 SERVER_NAME = "pithub"
@@ -104,7 +105,7 @@ def _build_auth(settings: ServerSettings) -> GitHubProvider:
             key_value=DiskStore(directory=str(settings.oauth_storage_dir)),
             fernet=Fernet(settings.oauth_storage_key.encode()),
         )
-    return OriginScopedGitHubProvider(
+    provider = OriginScopedGitHubProvider(
         client_id=settings.github_client_id,
         client_secret=settings.github_client_secret,
         base_url=settings.base_url,
@@ -112,6 +113,9 @@ def _build_auth(settings: ServerSettings) -> GitHubProvider:
         jwt_signing_key=settings.jwt_signing_key,
         client_storage=client_storage,
     )
+    # 요청마다 GitHub API를 두 번 부르지 않도록 검증 결과를 잠깐 기억한다
+    provider._token_validator = CachedTokenVerifier(provider._token_validator)
+    return provider
 
 
 def _build_repository(settings: ServerSettings) -> DecisionRepository | None:

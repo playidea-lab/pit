@@ -620,3 +620,57 @@ def test_protected_resource_is_the_whole_origin_so_team_addresses_pass_client_ch
 
     assert 'resource_metadata="http://127.0.0.1:8000/.well-known/oauth-protected-resource"' in challenge
     assert metadata["resource"].rstrip("/") == "http://127.0.0.1:8000"
+
+
+# --- GitHub 토큰 검증 캐시 ------------------------------------------------------
+
+
+class _CountingVerifier:
+    required_scopes = ["read:user"]
+
+    def __init__(self, valid: set[str]) -> None:
+        self.valid = valid
+        self.calls = 0
+
+    async def verify_token(self, token: str):  # noqa: ANN201
+        from fastmcp.server.auth import AccessToken
+
+        self.calls += 1
+        return AccessToken(token=token, client_id="1", scopes=["read:user"]) if token in self.valid else None
+
+
+def test_token_verification_is_cached_within_ttl_and_refreshed_after():
+    from pit.server.tokencache import CachedTokenVerifier
+
+    now = [0.0]
+    inner = _CountingVerifier({"good"})
+    cached = CachedTokenVerifier(inner, clock=lambda: now[0], ttl_seconds=300)
+
+    for _ in range(5):
+        assert asyncio.run(cached.verify_token("good")) is not None
+    assert inner.calls == 1
+    now[0] = 301
+    asyncio.run(cached.verify_token("good"))
+    assert inner.calls == 2
+
+
+def test_token_verification_failures_are_not_cached_and_cache_is_bounded():
+    from pit.server.tokencache import CachedTokenVerifier
+
+    inner = _CountingVerifier({"t0", "t1", "t2"})
+    cached = CachedTokenVerifier(inner, clock=lambda: 0.0, max_entries=2)
+
+    assert asyncio.run(cached.verify_token("bad")) is None
+    assert asyncio.run(cached.verify_token("bad")) is None
+    assert inner.calls == 2
+    for token in ("t0", "t1", "t2"):
+        asyncio.run(cached.verify_token(token))
+    asyncio.run(cached.verify_token("t0"))  # 가장 오래된 것은 밀려났다
+    assert inner.calls == 6
+
+
+def test_build_server_wraps_github_verifier_with_cache():
+    from pit.server.app import _build_auth
+    from pit.server.tokencache import CachedTokenVerifier
+
+    assert isinstance(_build_auth(SETTINGS)._token_validator, CachedTokenVerifier)
