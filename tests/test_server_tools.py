@@ -796,3 +796,50 @@ def test_about_rejects_unknown_kind_and_too_many_nodes():
         _run(tools.record_decision(ALICE, _arguments(about=[{"kind": "person", "name": "고객 A"}])))
     with pytest.raises(ToolFailure):
         _run(tools.record_decision(ALICE, _arguments(about=[{"name": f"t{i}"} for i in range(7)])))
+
+
+
+# --- G4: 그래프 읽기 -------------------------------------------------------------
+
+
+def test_search_by_topic_name_finds_decisions_whose_text_does_not_contain_the_word():
+    """claude.ai의 기획자가 주제로 물으면, 본문에 그 단어가 없는 개발자의 판단도 근거로 나온다"""
+    repository = _team_repository()
+    tools = _tools(repository)
+    bobs = _run(tools.record_decision(BOB_IN_PILAB, _arguments(
+        situation="데이터 나누기", proposal="무작위로 섞는다", human_quote="아니 시간 순으로", about=[{"name": "평가 분할"}],
+    )))["id"]  # fmt: skip
+    repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
+
+    found = _run(tools.search_my_decisions(ALICE_IN_PILAB, "평가 분할"))
+
+    assert [(item["id"], item["by"], item["topics"]) for item in found] == [(bobs, "bob", ["평가 분할"])]
+
+
+def test_topic_search_never_returns_teammates_unshared_or_other_teams_decisions():
+    repository = _team_repository()
+    tools = _tools(repository)
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="유예 중", about=[{"name": "평가 분할"}])))
+    _run(tools.record_decision(BOB, _arguments(proposal="밥 개인", about=[{"name": "평가 분할"}])))
+
+    assert _run(tools.search_my_decisions(ALICE_IN_PILAB, "평가 분할")) == []
+
+
+def test_get_decision_shows_topics_and_related_decisions_the_caller_can_read():
+    repository = _team_repository()
+    tools = _tools(repository)
+    base = _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="시계열로 간다")))["id"]
+    hidden = _run(tools.record_decision(BOB, _arguments(proposal="밥 개인 메모")))["id"]
+    repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
+    mine = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(
+        proposal="시간 분할", about=[{"name": "평가 분할"}],
+        links=[{"relation": "depends_on", "to": base}, {"relation": "depends_on", "to": hidden}],
+    )))["id"]  # fmt: skip
+    repository.links = repository.links | {(hidden, mine, "conflicts_with", "proposed")}
+
+    detail = _run(tools.get_decision(ALICE, mine))
+
+    assert detail["topics"] == ["평가 분할"]
+    assert detail["related"] == [
+        {"id": base, "relation": "depends_on", "direction": "out", "status": "confirmed", "proposal": "시계열로 간다"}
+    ]

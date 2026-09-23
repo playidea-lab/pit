@@ -55,7 +55,7 @@ decision_links   (from_decision → to_decision, relation[supersedes|conflicts_w
 | **G1 스키마** ✅ c901d24 | `nodes`·`decision_nodes`·`decision_links` + RLS, `supersedes` 이관 | 팀원은 팀에 보인 결정의 노드·엣지만 본다 (RLS) | 1~2일 |
 | **G2 쓰기** ✅ MCP (push 규약은 남음) | `record_decision.about`·`links`, 이름 정규화 → 기존 노드에 붙이거나 생성, 검색 결과에 주제 이름(`topics`), push 같은 규약 | 두 세션이 같은 주제를 기록하면 노드 하나 | 2일 |
 | **G3 이름 맞추기** | trigram 후보 → 정리함 "같은 주제입니까?" → `merged_into` | 병합 뒤 두 이름 모두 같은 결정 | 2일 |
-| **G4 그래프 읽기** | 주제 1-hop 확장 검색, `/topic/<id>`, `get_decision` 에 연결 결정 | claude.ai에서 주제로 물으면 개발자 판단이 근거로 | 2~3일 |
+| **G4 그래프 읽기** ✅ | 주제 1-hop 확장 검색, `/topic/<id>`, `get_decision` 에 연결 결정 | claude.ai에서 주제로 물으면 개발자 판단이 근거로 | 2~3일 |
 | **G5 충돌** | 같은 주제 반대 판정 → `conflicts_with` 후보 → 정리함 확인 | 기획·개발의 상반된 결정이 정리함에 | 2일 |
 | **G7 오프라인 시험** | 282건 시간 순 분할, 기록 있는 판정 vs 없는 판정 | 구조화된 리포트 | 2일 |
 | **G6 트윈 L2** | `ask_twin(login, proposal)`: 근거 수집 → 판정기(기본 세션 LLM, 선택 JEV) → 낮으면 본인 정리함에 질문 → 답이 결정·라벨 · "내 트윈" 화면 | G7 통과 | 3~4일 |

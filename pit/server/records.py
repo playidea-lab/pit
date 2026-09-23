@@ -15,6 +15,8 @@ from pit.decisions.models import DecisionKind, RejectKind, Verdict
 from pit.transcripts.redact import RedactionRules, redact
 
 MAX_TEXT_CHARS = 4000
+# AI에게 돌려주는 요약의 글자 상한 — 세션 컨텍스트를 잡아먹지 않기 위해
+SUMMARY_CHARS = 140
 MAX_OPTIONS = 12
 MAX_TAGS = 8
 MAX_SUPERSEDES = 5

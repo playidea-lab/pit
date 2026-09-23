@@ -7,11 +7,12 @@ from datetime import datetime, timedelta
 
 from pydantic import ValidationError
 
-from pit.server.graph import GraphWriter
+from pit.server.graph import GraphReader, GraphWriter
 from pit.server.identity import Caller
 from pit.server.ratelimit import RateLimiter
 from pit.server.records import (
     REPEAT_WINDOW_DAYS,
+    SUMMARY_CHARS,
     TEAM_SHARE_GRACE,
     RecordDecisionInput,
     StoredDecision,
@@ -25,8 +26,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SEARCH_LIMIT = 8
 MAX_SEARCH_LIMIT = 30
-# AI에게 돌려주는 요약의 글자 상한 — 세션 컨텍스트를 잡아먹지 않기 위해
-SUMMARY_CHARS = 140
 
 # 검색 범위: 본인만 / 본인 + 속한 팀 전부 / 본인 + 특정 팀
 SCOPE_MINE = "mine"
@@ -172,6 +171,8 @@ class DecisionTools:
         found = await self.repository.search_recorded(caller.github_id, query, bounded)
         if teams:
             found = _merge(found, await self.repository.search_team(list(teams), query, bounded))
+        # 그래프로 넓힌다: 질의가 주제 이름에 걸리면 그 주제에 매달린 결정도 (G4)
+        found = _merge(found, await self._reader(caller, teams).topic_hits(list(teams), caller.github_id, query, bounded))
         found = _rank(found)[:bounded]
         logins = await self.repository.logins_of(
             [d.owner_github_id for d in found if d.owner_github_id != caller.github_id]
@@ -189,14 +190,31 @@ class DecisionTools:
             raise ToolFailure("그런 결정이 없습니다.")
         # 전체 내용을 가져갔다 = 실제로 썼다. 검색 순위와 A1 측정의 재료.
         await self.repository.mark_cited(decision.owner_github_id, decision_id)
+        teams = dict(await self.repository.member_teams(caller.github_id))
+        graph = {
+            "topics": (await self.repository.topics_of([decision_id])).get(decision_id, []),
+            "related": await self._reader(caller, teams).related(decision_id),
+        }
+        graph = {key: value for key, value in graph.items() if value}
         if decision.owner_github_id == caller.github_id:
-            return _detail(decision)
+            return {**_detail(decision), **graph}
         # 남의 판단을 가져갔다 = 판단이 사람 사이를 건너갔다 (북극성 지표, cites 엣지)
         await self.repository.record_transfer(decision, caller.github_id, TRANSFER_VIA_GET, client)
         logger.info("판단 건너감", extra={"decision_id": decision_id, "team_id": decision.team_id})
-        teams = dict(await self.repository.member_teams(caller.github_id))
         logins = await self.repository.logins_of([decision.owner_github_id])
-        return _detail(decision, by=logins.get(decision.owner_github_id), team=teams.get(decision.team_id or ""))
+        detail = _detail(decision, by=logins.get(decision.owner_github_id), team=teams.get(decision.team_id or ""))
+        return {**detail, **graph}
+
+    def _reader(self, caller: Caller, teams: dict[str, str]) -> GraphReader:
+        """볼 수 있는 결정만 돌려주는 그래프 읽기 — 본인 것, 또는 teams 안에서 팀에 보인 것"""
+        now = self.now()
+
+        def readable(decision: StoredDecision) -> bool:
+            if decision.owner_github_id == caller.github_id:
+                return decision.status != "discarded"
+            return decision.team_id in teams and is_team_shared(decision, now)
+
+        return GraphReader(self.repository, readable)
 
     async def _can_read(self, caller: Caller, decision: StoredDecision) -> bool:
         """본인 것이거나, 내가 속한 팀에 보이게 된(확인됐거나 유예가 지난) 팀 범위 결정"""

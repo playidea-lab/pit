@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import VerifyBar from "@/components/VerifyBar";
 import { deleteDecision, withdrawFromTeam } from "@/lib/actions";
 import { getMyAccount, getMyDecision, isTeamShared, teamShareAt } from "@/lib/decisions";
+import { KIND_LABEL, RELATION_LABEL, linksAmong, loadDecisions, nodesOfDecision } from "@/lib/graph";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 import { getTeamDecision } from "@/lib/teams";
 
@@ -41,6 +42,13 @@ export default async function DecisionPage({ params }: PageProps) {
   const shareAt = mine ? teamShareAt(mine) : null;
   const owner = mine ? account?.github_login : teamShown?.github_login;
 
+  // 그래프: 이 결정이 매달린 노드와, 링크로 이어진 결정들 (볼 수 있는 것만)
+  const [nodes, links] = await Promise.all([nodesOfDecision(supabase, id), linksAmong(supabase, [id])]);
+  const relatedIds = links.map((l) => (l.from_decision === id ? l.to_decision : l.from_decision));
+  const relatedById = new Map(
+    (await loadDecisions(supabase, relatedIds, account?.github_id ?? 0)).map((d) => [d.id, d]),
+  );
+
   return (
     <main>
       <Header signedIn />
@@ -58,8 +66,13 @@ export default async function DecisionPage({ params }: PageProps) {
           )}
         </div>
 
-        <div className="mb-8">
+        <div className="mb-8 flex flex-wrap items-center gap-2">
           <VerdictBadge verdict={shown.verdict} chosen={shown.chosen} />
+          {nodes.map((n) => (
+            <Link key={n.id} href={`/topic/${n.id}`} className="badge badge-choice hover:opacity-80">
+              {KIND_LABEL[n.kind]} · {n.name}
+            </Link>
+          ))}
         </div>
 
         <div className="card space-y-6">
@@ -72,13 +85,28 @@ export default async function DecisionPage({ params }: PageProps) {
             <blockquote className="quote">{shown.human_quote}</blockquote>
           </Row>
           {shown.rationale && shown.rationale !== shown.human_quote && <Row label="근거">{shown.rationale}</Row>}
-          {shown.supersedes.length > 0 && (
-            <Row label="뒤집은 결정">
-              {shown.supersedes.map((prev) => (
-                <Link key={prev} href={`/d/${prev}`} className="link mr-3 font-mono text-sm">
-                  {prev}
-                </Link>
-              ))}
+          {links.some((l) => relatedById.has(l.from_decision === id ? l.to_decision : l.from_decision)) && (
+            <Row label="이어진 판단">
+              <ul className="space-y-1.5">
+                {links.map((l) => {
+                  const otherId = l.from_decision === id ? l.to_decision : l.from_decision;
+                  const other = relatedById.get(otherId);
+                  if (!other) return null;
+                  const direction = l.from_decision === id ? "이 결정이" : "이 결정을";
+                  return (
+                    <li key={`${l.from_decision}-${l.to_decision}-${l.relation}`} className="text-sm">
+                      <span className="faint mr-2">
+                        {direction} {RELATION_LABEL[l.relation]}
+                        {l.status === "proposed" && " (후보)"}
+                      </span>
+                      <Link href={`/d/${otherId}`} className="link">
+                        {other.proposal}
+                      </Link>
+                      <span className="faint ml-2">{other.mine ? "나" : other.author}</span>
+                    </li>
+                  );
+                })}
+              </ul>
             </Row>
           )}
           {mine && Object.keys(mine.source).length > 0 && (

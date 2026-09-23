@@ -9,7 +9,7 @@ import unicodedata
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from pit.server.records import RecordDecisionInput, StoredDecision
+from pit.server.records import SUMMARY_CHARS, RecordDecisionInput, StoredDecision
 from pit.server.repository import DecisionRepository
 from pit.transcripts.redact import RedactionRules, redact
 
@@ -82,3 +82,29 @@ class GraphWriter:
         if skipped:
             summary["links_skipped"] = skipped
         return summary
+
+
+@dataclass
+class GraphReader:
+    """그래프로 넓혀 읽는다 (G4). readable 은 호출자가 이 결정을 볼 수 있는가 — 저장소는 service_role 이라 여기서 거른다."""
+
+    repository: DecisionRepository
+    readable: Callable[[StoredDecision], bool]
+
+    async def topic_hits(self, team_ids: list[str], owner_github_id: int, query: str, limit: int) -> list[StoredDecision]:
+        """질의가 노드 이름에 걸리면, 그 노드에 매달린 결정들 — 본문에 그 단어가 없어도 같은 주제면 나온다"""
+        node_ids = await self.repository.find_nodes(team_ids, owner_github_id, normalize_node_name(query), limit)
+        decision_ids = await self.repository.decision_ids_on_nodes(node_ids, limit * 3)
+        return [d for d in await self.repository.get_many(decision_ids) if self.readable(d)][:limit]
+
+    async def related(self, decision_id: str) -> list[dict[str, object]]:
+        """이 결정과 링크로 이어진 결정들 (볼 수 있는 것만) — 방향·관계·짧은 제안"""
+        links = await self.repository.links_of(decision_id)
+        other = {(to if frm == decision_id else frm): (rel, status, "out" if frm == decision_id else "in")
+                 for frm, to, rel, status in links}  # fmt: skip
+        found = {d.id: d for d in await self.repository.get_many(list(other)) if self.readable(d)}
+        return [
+            {"id": other_id, "relation": rel, "direction": direction, "status": status,
+             "proposal": found[other_id].proposal[:SUMMARY_CHARS]}
+            for other_id, (rel, status, direction) in other.items() if other_id in found
+        ]  # fmt: skip

@@ -206,3 +206,21 @@ class InMemoryRepository:
             if decision_id in decision_ids:
                 topics.setdefault(decision_id, []).append(names[node_id])
         return topics
+
+    # --- 판단 그래프 읽기 (G4) ---
+
+    async def find_nodes(self, team_ids: list[str], owner_github_id: int, norm_query: str, limit: int) -> list[str]:
+        hits = [
+            node_id for (team, owner, _kind, norm), (node_id, _name) in getattr(self, "nodes", {}).items()
+            if (team in team_ids or owner == owner_github_id) and norm_query and norm_query in norm
+        ]  # fmt: skip
+        return hits[:limit]
+
+    async def decision_ids_on_nodes(self, node_ids: list[str], limit: int) -> list[str]:
+        return list(dict.fromkeys(d for d, n in sorted(getattr(self, "decision_nodes", set())) if n in node_ids))[:limit]
+
+    async def get_many(self, decision_ids: list[str]) -> list:
+        return [row for row in self.rows if row.id in decision_ids]
+
+    async def links_of(self, decision_id: str) -> list:
+        return [(frm, to, rel, status) for frm, to, rel, status in getattr(self, "links", set()) if decision_id in (frm, to)]
