@@ -36,7 +36,9 @@ export default function AuthButton() {
 
   if (user) {
     const avatarUrl = user.user_metadata?.avatar_url as string | undefined;
-    const username = (user.user_metadata?.user_name as string | undefined) ?? "me";
+    // GitHub 로그인은 사용자 이름, 이메일 로그인은 이메일 앞부분 (계정 이름과 같은 규칙)
+    const username =
+      (user.user_metadata?.user_name as string | undefined) ?? user.email?.split("@")[0] ?? "로그인됨";
     return (
       <div className="flex items-center gap-3">
         {avatarUrl && (
