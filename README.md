@@ -75,6 +75,12 @@ npm ci && npm run build && npm start
 ```
 
 Supabase Auth의 GitHub provider에 같은 OAuth App을 넣고, OAuth App에 Supabase 콜백 URL을 추가한다.
+
+**로그인 방식** (`PITHUB_AUTH`)
+- `github` (기본): 서버가 GitHub OAuth를 중계한다. GitHub 계정만.
+- `supabase` (권장): Supabase Auth의 OAuth 2.1 서버가 AI 도구 로그인을 맡고, 서버는 토큰만 검증한다. **GitHub와 이메일(매직 링크)** 모두.
+  Supabase 대시보드에서 Authentication → OAuth Server 켜기 · Allow Dynamic OAuth Apps 켜기 ·
+  Authorization path `/oauth/consent` · Site URL = 웹 주소 · Providers → Email 켜기.
 서버는 Supabase 없이도 뜨지만 그때는 기록 도구가 "저장소 준비 중"을 돌려준다.
 
 ## 로컬 CLI `pit` (선택, 개발자용)
