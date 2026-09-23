@@ -34,7 +34,7 @@ claude.ai · Claude Code · Codex에 MCP 커넥터 하나를 붙이면, 당신�
 | `pithub/web/` | Next.js 웹 — 정리함, 내 결정, 팀 `/t/<팀>`(커넥터 주소·원칙·AGENTS.md 초안), 공개 페이지 `/u/<아이디>`, 설정 |
 | `pithub/supabase/` | Postgres 스키마와 RLS (마이그레이션) |
 | `pit/` (그 외) | 로컬 CLI `pit` — 세션 원문 보관함, 결정 추출, MCP 기록 감사, push/pull |
-| `docs/` | 설계 문서. `PIT_KNOWLEDGE_DESIGN.md`(생애주기), `BACKFILL_MEMORY.md`(메모 백필) |
+| `docs/` | 설계 문서. `PRODUCT.md`(제품 정의 — 판단 그래프와 트윈), `PIT_KNOWLEDGE_DESIGN.md`(생애주기), `BACKFILL_MEMORY.md`(메모 백필) |
 | `.pit/decisions/` | 이 프로젝트 자체의 결정 기록 (도그푸딩) |
 
 ## 호스팅된 pithub 쓰기
