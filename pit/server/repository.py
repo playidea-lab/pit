@@ -110,6 +110,24 @@ class DecisionRepository(Protocol):
         """(from_decision, to_decision, relation, status) — 이 결정이 어느 쪽이든 걸린 링크"""
         ...
 
+    # --- 트윈 (G6) ---
+
+    async def find_account(self, github_login: str) -> tuple[int, bool] | None:
+        """(github_id, 떠났는가). 없으면 None."""
+        ...
+
+    async def team_decisions_of(self, owner_github_id: int, team_ids: list[str], limit: int) -> list[StoredDecision]:
+        """그 사람이 이 팀들에 남긴 팀 범위 결정 (볼 수 있는지는 호출자가 거른다)"""
+        ...
+
+    async def record_consult(
+        self, asker: int, twin: int, question: str, decision_ids: list[str], confidence: float, abstained: bool
+    ) -> None: ...
+
+    async def create_twin_question(
+        self, asker: int, twin: int, team_id: str | None, situation: str, proposal: str, confidence: float
+    ) -> None: ...
+
     async def find_team(self, slug: str) -> str | None:
         """slug 의 팀 id. 없으면 None."""
         ...

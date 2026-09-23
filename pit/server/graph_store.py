@@ -123,3 +123,38 @@ class SupabaseGraphMixin:
         }
         rows = (await self._request("GET", "/decision_links", params=params)).json()
         return [(str(r["from_decision"]), str(r["to_decision"]), str(r["relation"]), str(r["status"])) for r in rows]
+
+    # --- 트윈 (G6) ---
+
+    async def find_account(self, github_login: str) -> tuple[int, bool] | None:
+        params = {"github_login": f"eq.{github_login}", "select": "github_id,deleted_at", "limit": "1"}
+        rows = (await self._request("GET", "/accounts", params=params)).json()
+        return (int(rows[0]["github_id"]), rows[0].get("deleted_at") is not None) if rows else None
+
+    async def team_decisions_of(self, owner_github_id: int, team_ids: list[str], limit: int) -> list[StoredDecision]:
+        if not team_ids:
+            return []
+        params = {
+            "owner_github_id": f"eq.{owner_github_id}", "visibility": "eq.team", "status": "neq.discarded",
+            "team_id": "in.(" + ",".join(team_ids) + ")", "order": "decided_at.desc", "limit": str(limit),
+        }  # fmt: skip
+        rows = (await self._request("GET", "/decisions", params=params)).json()
+        return [StoredDecision.model_validate(row) for row in rows]
+
+    async def record_consult(
+        self, asker: int, twin: int, question: str, decision_ids: list[str], confidence: float, abstained: bool
+    ) -> None:
+        await self._request(
+            "POST", "/consult_log", headers={"Prefer": "return=minimal"},
+            json={"asker_github_id": asker, "twin_github_id": twin, "question": question,
+                  "decision_ids": decision_ids, "confidence": confidence, "abstained": abstained},
+        )  # fmt: skip
+
+    async def create_twin_question(
+        self, asker: int, twin: int, team_id: str | None, situation: str, proposal: str, confidence: float
+    ) -> None:
+        await self._request(
+            "POST", "/twin_questions", headers={"Prefer": "return=minimal"},
+            json={"asker_github_id": asker, "twin_github_id": twin, "team_id": team_id, "situation": situation,
+                  "proposal": proposal, "confidence": confidence},
+        )  # fmt: skip

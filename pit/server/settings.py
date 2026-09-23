@@ -14,6 +14,9 @@ ENV_SUPABASE_URL = "PITHUB_SUPABASE_URL"
 ENV_SUPABASE_SERVICE_KEY = "PITHUB_SUPABASE_SERVICE_KEY"
 ENV_OAUTH_STORAGE_DIR = "PITHUB_OAUTH_STORAGE_DIR"
 ENV_OAUTH_STORAGE_KEY = "PITHUB_OAUTH_STORAGE_KEY"
+# 트윈에게 묻기(G6)를 여는 스위치 — D-0009: LLM 판정기 본 시험을 통과하기 전에는 끈다
+ENV_TWIN_ENABLED = "PITHUB_TWIN_ENABLED"
+TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 
 # 개발 기본값 (운영에서는 반드시 환경변수로 지정한다)
 DEV_HOST = "127.0.0.1"
@@ -41,6 +44,7 @@ class ServerSettings:
     # OAuth 클라이언트 등록과 토큰을 둘 디렉터리. 없으면 메모리(재시작하면 모두 다시 로그인).
     oauth_storage_dir: Path | None = None
     oauth_storage_key: str | None = None
+    twin_enabled: bool = False
 
     @property
     def storage_configured(self) -> bool:
@@ -74,6 +78,7 @@ def load_settings() -> ServerSettings:
         jwt_signing_key=os.environ.get(ENV_JWT_SIGNING_KEY),
         supabase_url=os.environ.get(ENV_SUPABASE_URL),
         supabase_service_key=os.environ.get(ENV_SUPABASE_SERVICE_KEY),
+        twin_enabled=os.environ.get(ENV_TWIN_ENABLED, "").strip().lower() in TRUE_VALUES,
         oauth_storage_dir=Path(storage_dir) if storage_dir else None,
         oauth_storage_key=storage_key,
     )

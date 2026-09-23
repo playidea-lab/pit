@@ -162,6 +162,11 @@ def _resolve_decided_at(requested: datetime | None, now: datetime) -> datetime:
     return requested
 
 
+def redact_text(text: str) -> str:
+    """서버가 받는 글에서 시크릿·개인정보를 가린다 (to_stored 와 같은 규칙)"""
+    return redact(text, RedactionRules()).text
+
+
 def to_stored(payload: RecordDecisionInput, owner_github_id: int, now: datetime) -> StoredDecision:
     """입력을 가림 처리해 저장할 모양으로 바꾼다 (중복 키는 가리기 전의 글로 만든다)"""
     counts: Counter[str] = Counter()

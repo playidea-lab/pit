@@ -805,3 +805,34 @@ def test_dismissed_pair_is_not_asked_again_and_other_namespaces_never_pair(db):
         assert db.execute("select count(*) from public.node_merge_candidates()").fetchone()[0] == 0
         with pytest.raises(psycopg.errors.InvalidParameterValue), db.transaction():
             db.execute("select public.merge_nodes(%s, %s)", (team_a, personal))
+
+
+# --- G6: 트윈 질문 ---------------------------------------------------------------
+
+
+def test_twin_question_is_seen_by_asker_and_owner_and_answered_only_by_the_owner(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    question = db.execute(
+        "insert into public.twin_questions (asker_github_id, twin_github_id, team_id, proposal) "
+        "values (%s, %s, %s, '평가를 무작위 분할로') returning id",
+        (ALICE_GITHUB_ID, BOB_GITHUB_ID, team),
+    ).fetchone()[0]
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    carol = sign_in_with_github(db, 3003, "carol")
+
+    with acting_as(db, "authenticated", carol):
+        assert db.execute("select count(*) from public.twin_questions").fetchone()[0] == 0
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", alice):
+        db.execute("select public.answer_twin_question(%s, 'reject', '아니')", (question,))
+    with acting_as(db, "authenticated", bob):
+        decision_id = db.execute("select public.answer_twin_question(%s, 'reject', '아니, 시간 분할')", (question,)).fetchone()[0]
+    with pytest.raises(psycopg.errors.InvalidParameterValue), acting_as(db, "authenticated", bob):
+        db.execute("select public.answer_twin_question(%s, 'approve', '다시')", (question,))
+
+    row = db.execute("select owner_github_id, status, visibility, team_id::text, verdict from public.decisions where id = %s", (decision_id,)).fetchone()
+    assert row == (BOB_GITHUB_ID, "confirmed", "team", team, "reject")
+    with acting_as(db, "authenticated", alice):
+        assert ids(db, "select id from public.team_decisions") == [decision_id]
+        assert db.execute("select answer_decision_id from public.twin_questions").fetchone()[0] == decision_id

@@ -224,3 +224,23 @@ class InMemoryRepository:
 
     async def links_of(self, decision_id: str) -> list:
         return [(frm, to, rel, status) for frm, to, rel, status in getattr(self, "links", set()) if decision_id in (frm, to)]
+
+    # --- 트윈 (G6) ---
+
+    async def find_account(self, github_login: str):  # noqa: ANN201
+        departed = getattr(self, "departed", set())
+        for github_id, login in self.accounts.items():
+            if login == github_login:
+                return github_id, github_id in departed
+        return None
+
+    async def team_decisions_of(self, owner_github_id: int, team_ids: list[str], limit: int) -> list:
+        rows = [r for r in self.rows if r.owner_github_id == owner_github_id and r.visibility == "team"
+                and r.team_id in team_ids and r.status != "discarded"]  # fmt: skip
+        return rows[:limit]
+
+    async def record_consult(self, asker: int, twin: int, question: str, decision_ids: list, confidence: float, abstained: bool) -> None:
+        self.consults = getattr(self, "consults", []) + [(asker, twin, question, decision_ids, abstained)]
+
+    async def create_twin_question(self, asker: int, twin: int, team_id, situation: str, proposal: str, confidence: float) -> None:  # noqa: ANN001
+        self.twin_questions = getattr(self, "twin_questions", []) + [(asker, twin, team_id, proposal)]

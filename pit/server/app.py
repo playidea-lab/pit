@@ -28,6 +28,7 @@ from pit.server.routing import TeamConnectorMiddleware
 from pit.server.settings import GITHUB_SCOPES, ServerSettings
 from pit.server.tokencache import CachedTokenVerifier
 from pit.server.tools import DEFAULT_SEARCH_LIMIT, DecisionTools, ToolFailure
+from pit.server.twin import TwinService, TwinUnavailable
 
 SERVER_NAME = "pithub"
 ResultT = TypeVar("ResultT")
@@ -202,6 +203,9 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         """Read one decision in full — this user's own, or one visible to their team. Call it for the records you actually rely on."""
         return await _run(ready().get_decision(_caller(), decision_id, client))
 
+    if settings.twin_enabled and repository is not None:
+        _register_twin(server, TwinService(repository, lambda: datetime.now(timezone.utc)))
+
     if repository is not None:
         api = LocalApi(repository)
         server.custom_route("/api/v1/me", methods=["GET"])(api.me)
@@ -219,3 +223,19 @@ async def _run(operation: Awaitable[ResultT]) -> ResultT:
         raise ToolError(str(e)) from e
     except RepositoryError as e:
         raise ToolError("pithub 저장소에 닿지 못했습니다. 기록은 저장되지 않았습니다.") from e
+
+
+def _register_twin(server: FastMCP, twin: TwinService) -> None:
+    """트윈에게 묻기 (G6) — PITHUB_TWIN_ENABLED 일 때만 도구가 보인다 (D-0009: 본 시험 통과 뒤)"""
+
+    @server.tool
+    async def ask_twin(
+        login: Annotated[str, Field(description="GitHub login of the teammate whose judgment you want to anticipate.")],
+        proposal: Annotated[str, Field(description="The proposal they would be judging, in 1-2 neutral sentences.")],
+        situation: Annotated[str, Field(description="What is being worked on, 1 sentence.")] = "",
+    ) -> dict[str, object]:
+        """Ask how a teammate would likely judge a proposal, from their visible past decisions. Returns a prediction with confidence and evidence, or abstains and asks them. It is a prediction, never their decision."""
+        try:
+            return await _run(twin.ask(_caller(), login, proposal, situation))
+        except TwinUnavailable as e:
+            raise ToolError(str(e)) from e

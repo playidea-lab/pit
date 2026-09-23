@@ -137,3 +137,23 @@ export async function curateNodes(form: FormData): Promise<void> {
   if (error) throw new Error(`주제 정리 실패: ${error.message}`);
   revalidatePath("/inbox");
 }
+
+const TWIN_VERDICTS = ["approve", "modify", "reject"] as const;
+
+/** 트윈이 기권해 나에게 온 질문에 답한다 — 답은 내 확인된 결정이 되어 다음 판정의 근거가 된다 (G6) */
+export async function answerTwinQuestion(form: FormData): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+  const questionId = Number(form.get("question_id"));
+  const verdict = text(form, "verdict");
+  const quote = text(form, "quote").slice(0, MAX_TEXT_CHARS);
+  if (!TWIN_VERDICTS.includes(verdict as (typeof TWIN_VERDICTS)[number]) || !quote) {
+    throw new Error("판정과 한 줄 답이 필요합니다.");
+  }
+  const { error } = await supabase.rpc("answer_twin_question", {
+    question_id: questionId,
+    answer_verdict: verdict,
+    answer_quote: quote,
+  });
+  if (error) throw new Error(`답하기 실패: ${error.message}`);
+  revalidatePath("/twin");
+}
