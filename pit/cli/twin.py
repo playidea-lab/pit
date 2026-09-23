@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -30,7 +31,12 @@ JUDGES = {"prior": prior_judge, "knn": knn_judge, "knn_other_projects": knn_othe
 
 JEV_KEY_ENV = "PITHUB_JEV_API_KEY"
 JEV_KEY_FILE = "jev.key"
-JEV_TIMEOUT_SECONDS = 20.0
+JEV_TIMEOUT_SECONDS = 30.0
+JEV_ATTEMPTS = 3
+JEV_BACKOFF_SECONDS = 2.0
+JEV_RETRY_STATUS = frozenset({429, 529})
+# 끝내 실패한 호출 — 보고서에 건수로 남긴다
+JEV_FAILURES: list[str] = []
 
 
 def _jev_key(home: Path) -> str | None:
@@ -43,15 +49,28 @@ def _jev_key(home: Path) -> str | None:
 
 
 def _post(url: str, headers: dict[str, str], body: dict[str, object]) -> dict[str, object]:
-    """실패는 JevError 로 — 판정기가 그 건을 기준선으로 물러나 확신도 0으로 센다"""
-    try:
-        with httpx.Client(timeout=JEV_TIMEOUT_SECONDS) as client:
-            response = client.post(url, headers=headers, json=body)
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPError as e:
-        console.print(f"[yellow]JEV 호출 실패: {type(e).__name__}[/yellow]")
-        raise JevError(type(e).__name__) from e
+    """시간 초과·과부하(429·529)는 물러서며 다시 시도한다. 끝내 실패하면 JevError —
+    판정기가 그 건을 기준선으로 물러나 확신도 0으로 세고, 실패 건수는 보고서에 남는다."""
+    last: Exception | None = None
+    for attempt in range(JEV_ATTEMPTS):
+        try:
+            with httpx.Client(timeout=JEV_TIMEOUT_SECONDS) as client:
+                response = client.post(url, headers=headers, json=body)
+                if response.status_code in JEV_RETRY_STATUS:
+                    raise httpx.HTTPStatusError("busy", request=response.request, response=response)
+                response.raise_for_status()
+                return response.json()
+        except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
+            last = e
+            retryable = isinstance(e, httpx.TimeoutException) or e.response.status_code in JEV_RETRY_STATUS
+            if not retryable:
+                break
+            time.sleep(JEV_BACKOFF_SECONDS * (attempt + 1))
+        except httpx.HTTPError as e:
+            last = e
+            break
+    JEV_FAILURES.append(type(last).__name__ if last else "unknown")
+    raise JevError(type(last).__name__ if last else "unknown")
 
 
 @app.command("eval")
@@ -75,6 +94,8 @@ def eval_cmd(
             raise typer.Exit(1)
         judges["jev"] = make_jev_judge(key, _post)
     report = {"dropped": dropped, **evaluate(items, judges)}
+    if jev:
+        report["jev_failed_calls"] = len(JEV_FAILURES)
     if output is not None:
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if as_json:
@@ -97,5 +118,7 @@ def _print(report: dict[str, object]) -> None:
             f"{cov['0.8']['coverage']:.2f} / {cov['0.8']['accuracy']:.3f}",
         )  # fmt: skip
     console.print(table)
+    if "jev_failed_calls" in report:
+        console.print(f"JEV 호출 실패(재시도 뒤): {report['jev_failed_calls']}건 — 그 건은 기준선·확신도 0으로 셈")
     for name, ci in report["vs_prior"].items():  # type: ignore[union-attr]
         console.print(f"{name} − prior 균형 정확도 95% 구간: [{ci['ci_low']:+.3f}, {ci['ci_high']:+.3f}]")
