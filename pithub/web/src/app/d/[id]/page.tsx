@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { VerdictBadge, formatDate } from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import VerifyBar from "@/components/VerifyBar";
-import { deleteDecision, setVisibility } from "@/lib/actions";
-import { getMyAccount, getMyDecision, getPublicDecision } from "@/lib/decisions";
+import { deleteDecision, withdrawFromTeam } from "@/lib/actions";
+import { getMyAccount, getMyDecision, isTeamShared, teamShareAt } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 import { getTeamDecision } from "@/lib/teams";
 
@@ -15,51 +15,45 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-const VISIBILITY_LABEL: Record<string, string> = {
-  private: "비공개",
-  team: "팀",
-  friends: "친구",
-  public: "공개",
-};
+// 요청 시점의 시각 — react-hooks/purity 가 컴포넌트 본문의 Date 생성을 막으므로 밖에서 읽는다
+function requestTime(): Date {
+  return new Date();
+}
 
 /**
- * 결정 상세. 소유자에게는 전체 열과 공개·삭제 조작이, 팀원에게는 팀 뷰의 열이, 그 밖의 사람에게는 공개 뷰의
- * 열만 보인다. 남의 비공개 결정은 존재 여부도 알려 주지 않는다(404).
+ * 결정 상세. 작성자에게는 전체 열과 조작이, 팀원에게는 팀 뷰의 열만 보인다.
+ * 남의 비공개 결정은 존재 여부도 알려 주지 않는다(404). 회사 밖으로 나가는 경로는 없다 (D-0010).
  */
 export default async function DecisionPage({ params }: PageProps) {
   const { id } = await params;
-  const supabase = await createServerSupabaseClient();
   const user = await getUser();
-  const account = user ? await getMyAccount(supabase) : null;
+  if (!user) redirect(`/?next=/d/${id}`);
+  const supabase = await createServerSupabaseClient();
+  const account = await getMyAccount(supabase);
 
-  const mine = user ? await getMyDecision(supabase, id) : null;
-  const teamShown = mine || !user ? null : await getTeamDecision(supabase, id);
-  const published = mine || teamShown ? null : await getPublicDecision(supabase, id);
-  const shown = mine ?? teamShown ?? published;
+  const mine = await getMyDecision(supabase, id);
+  const teamShown = mine ? null : await getTeamDecision(supabase, id);
+  const shown = mine ?? teamShown;
   if (!shown) notFound();
 
-  const owner = mine ? account?.github_login : (teamShown ?? published)?.github_login;
-  const isPublic = mine?.visibility === "public";
+  const now = requestTime();
+  const shared = mine ? isTeamShared(mine, now) : true;
+  const shareAt = mine ? teamShareAt(mine) : null;
+  const owner = mine ? account?.github_login : teamShown?.github_login;
 
   return (
     <main>
-      <Header signedIn={Boolean(user)} handle={account?.github_login} />
+      <Header signedIn />
       <section className="page">
         <div className="faint mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-          {owner && (
-            <Link href={`/u/${owner}`} className="muted hover:text-ink">
-              {owner}
-            </Link>
-          )}
+          {owner && <span className="muted">{owner}</span>}
+          {teamShown?.departed && <span className="badge badge-modify">떠난 구성원</span>}
           <span>{formatDate(shown.decided_at)}</span>
-          {mine && (
-            <span className={isPublic ? "text-[var(--approve-fg)]" : ""}>
-              {VISIBILITY_LABEL[mine.visibility]} · {mine.status === "confirmed" ? "확인됨" : "미확인"}
-            </span>
-          )}
+          {mine && <span>{scopeLabel(mine.visibility, mine.status, shared, shareAt)}</span>}
           {teamShown && (
             <Link href={`/t/${teamShown.team_slug}`} className="muted hover:text-ink">
               팀 · {teamShown.team_slug}
+              {!teamShown.verified && " · 미확인"}
             </Link>
           )}
         </div>
@@ -74,7 +68,7 @@ export default async function DecisionPage({ params }: PageProps) {
             <span className="text-[17px] font-medium text-ink">{shown.proposal}</span>
           </Row>
           {shown.options.length > 0 && <Row label="선택지">{shown.options.join(" · ")}</Row>}
-          <Row label="내 말">
+          <Row label={mine ? "내 말" : "그 사람의 말"}>
             <blockquote className="quote">{shown.human_quote}</blockquote>
           </Row>
           {shown.rationale && shown.rationale !== shown.human_quote && <Row label="근거">{shown.rationale}</Row>}
@@ -101,30 +95,43 @@ export default async function DecisionPage({ params }: PageProps) {
         {mine && mine.status === "draft" && (
           <div className="card mt-6 border-[var(--accent)]/30 bg-[var(--accent-soft)]/40">
             <p className="mb-3 text-sm text-ink">
-              AI가 기록했고 아직 확인하지 않은 결정입니다. 공유하려면 먼저 확인해 주세요.
+              AI가 기록했고 아직 확인하지 않은 결정입니다.
+              {mine.visibility === "team" && !shared && " 맞으면 확인하고, 팀에 보이면 안 되면 빼 주세요."}
             </p>
             <VerifyBar decision={mine} compact />
           </div>
         )}
 
-        {mine && mine.status === "confirmed" && (
+        {mine && (
           <div className="mt-6 flex items-center gap-2">
-            <form action={setVisibility}>
-              <input type="hidden" name="id" value={mine.id} />
-              <input type="hidden" name="visibility" value={isPublic ? "private" : "public"} />
-              <button className={isPublic ? "btn btn-secondary" : "btn btn-primary"}>
-                {isPublic ? "비공개로 전환" : "공개하기"}
-              </button>
-            </form>
-            <form action={deleteDecision} className="ml-auto">
-              <input type="hidden" name="id" value={mine.id} />
-              <button className="btn btn-danger">삭제</button>
-            </form>
+            {mine.visibility === "team" && !shared && (
+              <form action={withdrawFromTeam}>
+                <input type="hidden" name="id" value={mine.id} />
+                <button className="btn btn-secondary">팀에서 빼기</button>
+              </form>
+            )}
+            {shared ? (
+              <p className="faint text-xs">
+                팀에 보인 결정은 회사의 기록입니다. 지우려면 팀 소유자에게 요청하세요.
+              </p>
+            ) : (
+              <form action={deleteDecision} className="ml-auto">
+                <input type="hidden" name="id" value={mine.id} />
+                <button className="btn btn-danger">삭제</button>
+              </form>
+            )}
           </div>
         )}
       </section>
     </main>
   );
+}
+
+function scopeLabel(visibility: string, status: string, shared: boolean, shareAt: Date | null): string {
+  const verified = status === "confirmed" ? "확인됨" : "미확인";
+  if (visibility !== "team") return `본인만 · ${verified}`;
+  if (shared) return `팀에 보임 · ${verified}`;
+  return `${shareAt ? shareAt.toLocaleDateString("ko-KR") : "3일 뒤"} 팀에 보임 · ${verified}`;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {

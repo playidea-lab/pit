@@ -1,8 +1,10 @@
 """테스트용 가짜 구현"""
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from pit.llm.client import LLMError, StructuredRequest
+from pit.server.records import is_team_shared
 from pit.transcripts.records import JsonObject
 
 
@@ -59,6 +61,8 @@ class InMemoryRepository:
         # (team_id, github_id) — 승인 대기 중인 가입 요청
         self.join_requests: set[tuple[str, int]] = set()
         self.fail_with: Exception | None = None
+        # 팀 공유 유예를 따질 때 쓰는 시각 — 테스트가 고정한다
+        self.now = lambda: datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
 
     def _maybe_fail(self) -> None:
         if self.fail_with is not None:
@@ -70,6 +74,9 @@ class InMemoryRepository:
 
     async def insert_draft(self, decision) -> bool:  # noqa: ANN001
         self._maybe_fail()
+        # DB가 채우는 created_at 을 흉내 낸다
+        if decision.created_at is None:
+            decision = decision.model_copy(update={"created_at": self.now()})
         duplicate = any(
             row.owner_github_id == decision.owner_github_id and row.dedupe_key == decision.dedupe_key
             for row in self.rows
@@ -156,7 +163,7 @@ class InMemoryRepository:
         found = [
             row
             for row in self.rows
-            if row.team_id in team_ids and row.status == "confirmed" and row.visibility == "team"
+            if row.team_id in team_ids and is_team_shared(row, self.now())
             and needle in f"{row.situation} {row.proposal} {row.rationale} {row.human_quote}".lower()
         ]
         return found[:limit]

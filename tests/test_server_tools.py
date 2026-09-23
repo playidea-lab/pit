@@ -469,12 +469,12 @@ def test_member_record_through_team_address_carries_no_pending_note():
     repository = _team_repository()
     result = _run(_tools(repository).record_decision(ALICE_IN_PILAB, _arguments()))
 
-    assert "note" not in result and "team_status" not in repository.rows[0].source
+    assert "가입 요청" not in str(result.get("note")) and "team_status" not in repository.rows[0].source
 
 
 def test_team_address_beats_project_default():
     repository = _team_repository()
-    repository.project_defaults[(1001, "pit")] = ("public", None)
+    repository.project_defaults[(1001, "pit")] = ("private", None)
     tools = _tools(repository)
 
     _run(tools.record_decision(ALICE_IN_PILAB, _arguments(project="pit")))
@@ -674,3 +674,41 @@ def test_build_server_wraps_github_verifier_with_cache():
     from pit.server.tokencache import CachedTokenVerifier
 
     assert isinstance(_build_auth(SETTINGS)._token_validator, CachedTokenVerifier)
+
+
+
+# --- 회사 제품: 3일 뒤 자동 공유 (D-0010) ------------------------------------------
+
+
+def test_teammates_team_draft_becomes_searchable_after_grace_marked_unverified():
+    """팀 주소로 기록된 초안은 3일 뒤 확인 없이도 팀에 보인다 — verified: false 로"""
+    from datetime import timedelta
+
+    repository = _team_repository()
+    tools = _tools(repository)
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="캐시 오래된", human_quote="밥의 오래된 초안")))
+    _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="캐시 새", human_quote="밥의 새 초안")))
+    repository.rows[0] = repository.rows[0].model_copy(update={"created_at": NOW - timedelta(days=4)})
+
+    found = _run(tools.search_my_decisions(ALICE_IN_PILAB, "캐시"))
+
+    assert [(item["human_quote"], item["verified"], item["by"]) for item in found] == [("밥의 오래된 초안", False, "bob")]
+    detail = _run(tools.get_decision(ALICE, repository.rows[0].id))
+    assert detail["proposal"] == "캐시 오래된"
+    with pytest.raises(ToolFailure, match="그런 결정이 없습니다"):
+        _run(tools.get_decision(ALICE, repository.rows[1].id))
+
+
+def test_team_record_result_tells_the_model_about_the_three_day_window():
+    result = _run(_tools(_team_repository()).record_decision(ALICE_IN_PILAB, _arguments()))
+
+    assert "3일 뒤" in str(result["note"])
+
+
+def test_stored_decision_write_excludes_created_at():
+    from pit.server.records import WRITE_EXCLUDE
+
+    repository = _team_repository()
+    _run(_tools(repository).record_decision(ALICE, _arguments()))
+
+    assert "created_at" not in repository.rows[0].model_dump(mode="json", exclude=WRITE_EXCLUDE)

@@ -6,13 +6,13 @@
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Protocol
 
 import httpx
 
 from pit.server.identity import Caller
-from pit.server.records import StoredDecision, normalize_text
+from pit.server.records import TEAM_SHARE_GRACE, WRITE_EXCLUDE, StoredDecision, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +123,8 @@ class SupabaseRepository:
             "/accounts",
             params={"on_conflict": "github_id"},
             headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
-            json={"github_id": github_id, "github_login": github_login},
+            # 계정을 지웠던 사람이 다시 오면 되살린다
+            json={"github_id": github_id, "github_login": github_login, "deleted_at": None},
         )
 
     async def insert_draft(self, decision: StoredDecision) -> bool:
@@ -132,7 +133,7 @@ class SupabaseRepository:
             "/decisions",
             params={"on_conflict": "owner_github_id,dedupe_key"},
             headers={"Prefer": "resolution=ignore-duplicates,return=representation"},
-            json=decision.model_dump(mode="json"),
+            json=decision.model_dump(mode="json", exclude=WRITE_EXCLUDE),
         )
         return bool(response.json())
 
@@ -184,7 +185,7 @@ class SupabaseRepository:
             "/decisions",
             params={"on_conflict": "id"},
             headers={"Prefer": "resolution=merge-duplicates,return=representation"},
-            json=[decision.model_dump(mode="json") for decision in decisions],
+            json=[decision.model_dump(mode="json", exclude=WRITE_EXCLUDE) for decision in decisions],
         )
         return len(response.json())
 
@@ -250,16 +251,20 @@ class SupabaseRepository:
     async def search_team(self, team_ids: list[str], query: str, limit: int) -> list[StoredDecision]:
         if not team_ids:
             return []
+        # 팀에 보이는 것: 확인됐거나 유예(3일)가 지난 초안 — DB의 is_team_shared() 와 같은 조건
+        shared_before = (datetime.now(timezone.utc) - TEAM_SHARE_GRACE).isoformat().replace("+00:00", "Z")
+        conditions = [f"or(status.eq.{STATUS_CONFIRMED},created_at.lte.{shared_before})"]
+        cleaned = sanitize_query(query)
+        if cleaned:
+            conditions.append("or(" + ",".join(f"{column}.ilike.*{cleaned}*" for column in SEARCH_COLUMNS) + ")")
         params = {
             "team_id": "in.(" + ",".join(team_ids) + ")",
-            "status": f"eq.{STATUS_CONFIRMED}",
+            "status": f"neq.{STATUS_DISCARDED}",
             "visibility": "eq.team",
+            "and": "(" + ",".join(conditions) + ")",
             "order": "decided_at.desc",
             "limit": str(limit),
         }
-        cleaned = sanitize_query(query)
-        if cleaned:
-            params["or"] = "(" + ",".join(f"{column}.ilike.*{cleaned}*" for column in SEARCH_COLUMNS) + ")"
         response = await self._request("GET", "/decisions", params=params)
         return [StoredDecision.model_validate(row) for row in response.json()]
 

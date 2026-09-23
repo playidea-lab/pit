@@ -68,9 +68,10 @@ automatically and not yet confirmed by the user; cite them with that caveat. `pr
 the user wants followed.
 
 Teams: if this connection came through a team address (`/t/<team>/mcp`), decisions are recorded for that
-team and searches include the team's confirmed decisions by default. Results with `by` are a teammate's —
+team. They become visible to the team 3 days later unless the user withdraws them; once visible they are the
+company's record. Searches include the team's visible decisions by default. Results with `by` are a teammate's —
 say whose they are when you rely on them ("last month <by> rejected the same approach"). Team principles
-rank first. You never see a teammate's unconfirmed or private records. Pass `scope` to search only your
+rank first. You never see a teammate's private records or their team records still inside the 3-day window. Pass `scope` to search only your
 own (`mine`) or a specific team (`team:<slug>`).
 """
 

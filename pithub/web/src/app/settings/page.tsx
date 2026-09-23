@@ -122,9 +122,11 @@ export default async function SettingsPage() {
         </Section>
 
         <div className="card border-[var(--reject-fg)]/30">
-          <h2 className="mb-2 text-[15px] font-semibold text-[var(--reject-fg)]">계정과 모든 결정 삭제</h2>
+          <h2 className="mb-2 text-[15px] font-semibold text-[var(--reject-fg)]">계정 삭제</h2>
           <p className="muted mb-3 text-sm">
-            결정, 검토 이력, 토큰이 모두 지워지고 되돌릴 수 없습니다. 확인을 위해 GitHub 아이디를 입력하세요.
+            본인만 보던 결정, 아직 팀에 보이기 전인 결정, 검토 이력, 토큰이 지워지고 되돌릴 수 없습니다.
+            <b className="text-ink"> 이미 팀에 보인 결정은 회사의 기록이라 남습니다</b> — 지우려면 팀 소유자에게 요청하세요.
+            확인을 위해 GitHub 아이디를 입력하세요.
           </p>
           <form action={deleteMyAccount} className="flex gap-2">
             <input name="confirm" placeholder={account?.github_login ?? ""} className="input max-w-xs" />

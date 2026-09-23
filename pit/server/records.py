@@ -90,6 +90,23 @@ class StoredDecision(BaseModel):
     source: dict[str, str] = Field(default_factory=dict)
     redactions: dict[str, int] = Field(default_factory=dict)
     dedupe_key: str
+    # 서버가 저장할 때 정한다(DB 기본값). 저장할 때는 보내지 않는다 — WRITE_EXCLUDE
+    created_at: datetime | None = None
+
+
+# 저장소에 쓸 때 빼는 열 (DB가 채운다)
+WRITE_EXCLUDE = {"created_at"}
+# 팀 범위 초안이 팀에 자동으로 보이기까지의 유예 — DB의 public.team_share_grace() 와 같아야 한다 (D-0010)
+TEAM_SHARE_GRACE = timedelta(days=3)
+
+
+def is_team_shared(decision: "StoredDecision", now: datetime) -> bool:
+    """팀에 보이는가: 팀 범위이고, 버리지 않았고, 확인됐거나 유예가 지났다"""
+    if decision.visibility != "team" or decision.status == "discarded":
+        return False
+    if decision.status == "confirmed":
+        return True
+    return decision.created_at is not None and decision.created_at <= now - TEAM_SHARE_GRACE
 
 
 def normalize_text(text: str) -> str:

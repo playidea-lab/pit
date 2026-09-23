@@ -16,7 +16,7 @@ const NAV = [
   { href: "/settings", label: "설정" },
 ];
 
-export default function Header({ signedIn, handle }: HeaderProps) {
+export default function Header({ signedIn }: HeaderProps) {
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-surface/90 backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-7 px-6">
@@ -30,11 +30,6 @@ export default function Header({ signedIn, handle }: HeaderProps) {
                 {item.label}
               </Link>
             ))}
-            {handle && (
-              <Link href={`/u/${handle}`} className="muted transition-colors hover:text-ink">
-                공개 페이지
-              </Link>
-            )}
           </nav>
         )}
         <div className="ml-auto">

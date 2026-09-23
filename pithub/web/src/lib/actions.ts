@@ -87,12 +87,12 @@ export async function reviewDecision(form: FormData): Promise<void> {
   revalidatePath(`/d/${id}`);
 }
 
-export async function setVisibility(form: FormData): Promise<void> {
+/** 팀에서 빼기 — 팀에 보이기 전(3일 유예 안)에만 된다. 보인 뒤에는 DB가 거부한다. */
+export async function withdrawFromTeam(form: FormData): Promise<void> {
   const supabase = await createServerSupabaseClient();
   const id = text(form, "id");
-  const visibility = text(form, "visibility") === "public" ? "public" : "private";
-  const { error } = await supabase.from("decisions").update({ visibility }).eq("id", id);
-  if (error) throw new Error(`공개 설정 실패: ${error.message}`);
+  const { error } = await supabase.from("decisions").update({ visibility: "private", team_id: null }).eq("id", id);
+  if (error) throw new Error(`팀에서 빼기 실패: ${error.message}`);
   revalidatePath(`/d/${id}`);
   revalidatePath("/inbox");
 }

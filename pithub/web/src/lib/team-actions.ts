@@ -101,3 +101,15 @@ export async function removeMember(form: FormData): Promise<void> {
   if (error) throw new Error(`내보내기 실패: ${error.message}`);
   revalidatePath(`/t/${slug}`);
 }
+
+/** 퇴사자 페르소나 삭제 — 팀 소유자만. 그 사람이 이 팀에 남긴 판단을 전부 지운다. */
+export async function erasePersona(form: FormData): Promise<void> {
+  const teamId = text(form, "team_id");
+  const slug = text(form, "slug");
+  const githubId = Number(form.get("github_id"));
+  const supabase = await createServerSupabaseClient();
+
+  const { error } = await supabase.rpc("erase_member_persona", { team: teamId, member: githubId });
+  if (error) throw new Error(`페르소나 삭제 실패: ${error.message}`);
+  revalidatePath(`/t/${slug}`);
+}

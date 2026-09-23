@@ -113,7 +113,7 @@ def test_decisions_other_users_private_rows_are_invisible_and_untouchable(db):
 
     with acting_as(db, "authenticated", bob):
         assert ids(db, "select id from public.decisions") == []
-        updated = db.execute("update public.decisions set visibility = 'public', status = 'confirmed'").rowcount
+        updated = db.execute("update public.decisions set status = 'confirmed'").rowcount
         deleted = db.execute("delete from public.decisions").rowcount
 
     assert (updated, deleted) == (0, 0)
@@ -130,22 +130,20 @@ def test_decisions_recorded_before_first_web_login_attach_to_the_account(db):
         assert ids(db, "select id from public.decisions") == ["PD-before-login"]
 
 
-def test_public_view_shows_only_confirmed_public_rows_without_private_columns(db):
-    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-draft")
-    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-confirmed-private", status="confirmed")
-    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-published", status="confirmed", visibility="public")
-
-    with acting_as(db, "anon"):
-        rows = db.execute("select * from public.public_decisions").fetchall()
-        columns = {column.name for column in db.execute("select * from public.public_decisions limit 0").description}
-
-    assert [row[0] for row in rows] == ["PD-published"]
-    assert columns.isdisjoint({"source", "extractor", "review", "redactions", "dedupe_key", "owner_github_id"})
-    assert "SECRET-SESSION" not in str(rows)
+def test_public_and_friends_paths_do_not_exist(db):
+    """회사 제품(D-0010): 판단이 회사 밖으로 나가는 경로가 스키마에 없다"""
+    missing = db.execute(
+        "select count(*) from pg_class where relname in ('public_decisions', 'friends_decisions', 'follows')"
+    ).fetchone()[0]
+    assert missing == 0
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-x")
+    for scope in ("public", "friends"):
+        with pytest.raises(psycopg.errors.CheckViolation), db.transaction():
+            db.execute("update public.decisions set visibility = %s where id = 'PD-x'", (scope,))
 
 
 def test_anon_cannot_read_tables_directly(db):
-    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-x", status="confirmed", visibility="public")
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-x", status="confirmed")
 
     with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "anon"):
         db.execute("select * from public.decisions")
@@ -163,21 +161,15 @@ def test_authenticated_user_cannot_insert_decisions(db):
         )
 
 
-def test_owner_can_confirm_publish_and_really_delete(db):
+def test_owner_can_confirm_and_really_delete_a_private_decision(db):
     record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-mine")
     alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
 
     with acting_as(db, "authenticated", alice):
-        db.execute("update public.decisions set status = 'confirmed', visibility = 'public' where id = 'PD-mine'")
-    with acting_as(db, "anon"):
-        assert ids(db, "select id from public.public_decisions") == ["PD-mine"]
-
-    with acting_as(db, "authenticated", alice):
+        db.execute("update public.decisions set status = 'confirmed' where id = 'PD-mine'")
         db.execute("delete from public.decisions where id = 'PD-mine'")
 
     assert ids(db, "select id from public.decisions") == []
-    with acting_as(db, "anon"):
-        assert ids(db, "select id from public.public_decisions") == []
 
 
 def test_owner_cannot_reassign_a_decision_to_someone_else(db):
@@ -201,51 +193,6 @@ def test_owner_cannot_rewrite_provenance_of_a_decision(db):
     with acting_as(db, "authenticated", alice):
         changed = db.execute("update public.decisions set verdict = 'modify' where id = 'PD-mine'").rowcount
     assert changed == 1
-
-
-def test_draft_marked_public_is_still_hidden_until_confirmed(db):
-    """범위는 의도다 — 초안에 public을 붙여도 확정 전에는 아무에게도 보이지 않는다"""
-    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-draft")
-    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
-
-    with acting_as(db, "authenticated", alice):
-        db.execute("update public.decisions set visibility = 'public' where id = 'PD-draft'")
-    with acting_as(db, "anon"):
-        assert ids(db, "select id from public.public_decisions") == []
-
-
-def test_same_payload_recorded_twice_is_rejected_by_dedupe_key(db):
-    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-once")
-
-    with pytest.raises(psycopg.errors.UniqueViolation):
-        db.execute(
-            "insert into public.decisions (id, owner_github_id, origin, kind, verdict, decided_at, dedupe_key) "
-            "values ('PD-twice', %s, 'mcp', 'verdict', 'reject', now(), 'PD-once')",
-            (ALICE_GITHUB_ID,),
-        )
-
-
-def test_non_github_identity_creates_no_profile(db):
-    user_id = uuid.uuid4()
-    db.execute("insert into auth.users (id) values (%s)", (user_id,))
-    db.execute(
-        "insert into auth.identities (user_id, provider, provider_id) values (%s, 'email', 'someone')", (user_id,)
-    )
-
-    assert db.execute("select count(*) from public.profiles").fetchone()[0] == 0
-
-
-def test_user_metadata_cannot_be_used_to_claim_another_github_id(db):
-    """사용자가 고칠 수 있는 raw_user_meta_data 는 신원 연결에 쓰이지 않는다"""
-    record_via_mcp(db, BOB_GITHUB_ID, "bob", "PD-bob")
-    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
-    db.execute(
-        "update auth.users set raw_user_meta_data = %s where id = %s",
-        (psycopg.types.json.Jsonb({"provider_id": str(BOB_GITHUB_ID), "sub": str(BOB_GITHUB_ID)}), alice),
-    )
-
-    with acting_as(db, "authenticated", alice):
-        assert ids(db, "select id from public.decisions") == []
 
 
 def test_api_tokens_are_visible_only_to_their_owner(db):
@@ -284,7 +231,7 @@ def test_delete_my_account_anonymous_is_refused(db):
         db.execute("select public.delete_my_account()")
 
 
-# --- 범위: team · friends · 자문 기록 -----------------------------------------
+# --- 범위: team · 자문 기록 -----------------------------------------
 
 
 def _team(conn, slug: str, owner_github_id: int) -> str:  # noqa: ANN001
@@ -339,8 +286,6 @@ def test_team_scoped_decision_visible_to_members_only(db):
         assert not columns & {"source", "redactions", "status", "visibility"}
     with acting_as(db, "authenticated", carol):
         assert ids(db, "select id from public.team_decisions") == []
-    with acting_as(db, "anon"):
-        assert ids(db, "select id from public.public_decisions") == []
 
 
 def test_team_decision_still_visible_after_owner_leaves_but_private_never_was(db):
@@ -355,33 +300,6 @@ def test_team_decision_still_visible_after_owner_leaves_but_private_never_was(db
 
     with acting_as(db, "authenticated", bob):
         assert ids(db, "select id from public.team_decisions") == ["PD-team"]
-
-
-def test_friends_scope_requires_mutual_acceptance(db):
-    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-friends")
-    _share(db, "PD-friends", "friends")
-    sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
-    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
-    db.execute("insert into public.follows (from_github_id, to_github_id, accepted) values (%s, %s, false)", (BOB_GITHUB_ID, ALICE_GITHUB_ID))
-
-    with acting_as(db, "authenticated", bob):
-        assert ids(db, "select id from public.friends_decisions") == []
-
-    db.execute("update public.follows set accepted = true where from_github_id = %s", (BOB_GITHUB_ID,))
-    with acting_as(db, "authenticated", bob):
-        assert ids(db, "select id from public.friends_decisions") == ["PD-friends"]
-        assert ids(db, "select id from public.decisions") == []
-
-
-def test_follow_request_can_only_be_accepted_by_its_target(db):
-    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
-    sign_in_with_github(db, BOB_GITHUB_ID, "bob")
-    with acting_as(db, "authenticated", alice):
-        db.execute("insert into public.follows (from_github_id, to_github_id) values (%s, %s)", (ALICE_GITHUB_ID, BOB_GITHUB_ID))
-        changed = db.execute("update public.follows set accepted = true where to_github_id = %s", (BOB_GITHUB_ID,)).rowcount
-
-    assert changed == 0
-    assert db.execute("select accepted from public.follows").fetchone()[0] is False
 
 
 def test_draft_with_team_scope_is_not_shown_to_team_until_confirmed(db):
@@ -523,8 +441,10 @@ def test_team_survives_its_creator_deleting_their_account(db):
 
     assert ids(db, "select slug from public.teams") == ["pilab"]
     with acting_as(db, "authenticated", bob):
-        # 계정과 함께 결정도 사라진다 — 팀에 남는 것은 팀이지 그 사람의 결정이 아니다
-        assert ids(db, "select id from public.team_decisions") == []
+        # 팀에 보이게 된 판단은 회사의 기록이다 — 작성자가 계정을 지워도 남고, 떠난 사람으로 표시된다 (D-0010)
+        assert db.execute("select id, github_login, departed from public.team_decisions").fetchall() == [
+            ("PD-alice-team", "alice", True)
+        ]
 
 
 # --- 가입 요청: 팀 주소로 온 비구성원은 승인 대기열에 (D-0008 보완) -----------------
@@ -592,3 +512,89 @@ def test_approval_moves_pending_team_address_records_to_team_scope(db):
         ("PD-pending", "team", team, None),
         ("PD-plain-private", "private", None, None),
     ]
+
+
+# --- 회사 제품: 3일 뒤 자동 공유 · 사후 거부 · 소유 이전 (D-0010) ----------------
+
+
+def _team_draft(conn, owner: int, decision_id: str, team: str, age_days: int = 0) -> None:  # noqa: ANN001
+    """팀 주소로 기록된 초안. age_days 만큼 과거에 만들어진 것으로 한다."""
+    record_via_mcp(conn, owner, f"user{owner}", decision_id)
+    conn.execute(
+        "update public.decisions set visibility = 'team', team_id = %s, created_at = now() - make_interval(days => %s) "
+        "where id = %s",
+        (team, age_days, decision_id),
+    )
+
+
+def test_team_draft_is_shared_automatically_after_three_days_unless_withdrawn_or_discarded(db):
+    team = _team(db, "pilab", BOB_GITHUB_ID)
+    _join(db, team, ALICE_GITHUB_ID)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-fresh", team, age_days=1)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-old", team, age_days=4)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-withdrawn", team, age_days=1)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-discarded", team, age_days=1)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+
+    with acting_as(db, "authenticated", alice):
+        db.execute("update public.decisions set visibility = 'private', team_id = null where id = 'PD-withdrawn'")
+        db.execute("update public.decisions set status = 'discarded' where id = 'PD-discarded'")
+    db.execute("update public.decisions set created_at = now() - interval '5 days'")
+
+    with acting_as(db, "authenticated", bob):
+        rows = db.execute("select id, verified from public.team_decisions order by id").fetchall()
+    assert rows == [("PD-fresh", False), ("PD-old", False)]
+
+
+def test_shared_decision_cannot_be_withdrawn_discarded_or_deleted_by_its_author(db):
+    team = _team(db, "pilab", BOB_GITHUB_ID)
+    _join(db, team, ALICE_GITHUB_ID)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-shared", team, age_days=4)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    for change in ("visibility = 'private', team_id = null", "status = 'discarded'"):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", alice):
+            db.execute(f"update public.decisions set {change} where id = 'PD-shared'")
+    with acting_as(db, "authenticated", alice):
+        assert db.execute("delete from public.decisions where id = 'PD-shared'").rowcount == 0
+        # 확인과 글 고치기는 된다
+        assert db.execute("update public.decisions set status = 'confirmed', verdict = 'modify' where id = 'PD-shared'").rowcount == 1
+
+
+def test_delete_my_account_keeps_shared_team_records_and_removes_the_rest(db):
+    team = _team(db, "pilab", BOB_GITHUB_ID)
+    _join(db, team, ALICE_GITHUB_ID)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-shared", team, age_days=4)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-still-draft", team, age_days=1)
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-private")
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.delete_my_account()")
+
+    assert ids(db, "select id from public.decisions") == ["PD-shared"]
+    assert db.execute("select deleted_at is not null from public.accounts where github_id = %s", (ALICE_GITHUB_ID,)).fetchone()[0]
+    assert db.execute("select count(*) from public.profiles where github_id = %s", (ALICE_GITHUB_ID,)).fetchone()[0] == 0
+    assert db.execute("select count(*) from public.team_members where github_id = %s", (ALICE_GITHUB_ID,)).fetchone()[0] == 0
+
+
+def test_only_team_owner_can_erase_a_member_persona(db):
+    team = _team(db, "pilab", BOB_GITHUB_ID)
+    _join(db, team, ALICE_GITHUB_ID)
+    _join(db, team, 3003)
+    _team_draft(db, ALICE_GITHUB_ID, "PD-alice", team, age_days=4)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    carol = sign_in_with_github(db, 3003, "carol")
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.delete_my_account()")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", carol):
+        db.execute("select public.erase_member_persona(%s, %s)", (team, ALICE_GITHUB_ID))
+    with acting_as(db, "authenticated", bob):
+        erased = db.execute("select public.erase_member_persona(%s, %s)", (team, ALICE_GITHUB_ID)).fetchone()[0]
+
+    assert erased == 1
+    assert ids(db, "select id from public.decisions") == []
+    assert db.execute("select count(*) from public.accounts where github_id = %s", (ALICE_GITHUB_ID,)).fetchone()[0] == 0

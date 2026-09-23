@@ -11,8 +11,10 @@ from pit.server.identity import Caller
 from pit.server.ratelimit import RateLimiter
 from pit.server.records import (
     REPEAT_WINDOW_DAYS,
+    TEAM_SHARE_GRACE,
     RecordDecisionInput,
     StoredDecision,
+    is_team_shared,
     normalize_text,
     to_stored,
 )
@@ -89,6 +91,11 @@ class DecisionTools:
             "redacted": sum(decision.redactions.values()),
             "visibility": decision.visibility,
         }
+        if decision.visibility == VISIBILITY_TEAM:
+            result["note"] = (
+                f"{TEAM_SHARE_GRACE.days}일 뒤 팀 '{caller.team_slug}'에 보입니다. 그 전에는 본인이 pithub 정리함에서 "
+                "빼거나 고칠 수 있습니다. 팀에 보인 뒤에는 회사의 기록입니다."
+            )
         if decision.source.get("team_status") == TEAM_STATUS_PENDING:
             result["note"] = (
                 f"팀 '{caller.team_slug}' 가입 요청을 보냈습니다. 소유자가 승인하면 이 기록은 팀 범위로 옮겨집니다. "
@@ -170,10 +177,10 @@ class DecisionTools:
         return _detail(decision, by=logins.get(decision.owner_github_id), team=teams.get(decision.team_id or ""))
 
     async def _can_read(self, caller: Caller, decision: StoredDecision) -> bool:
-        """본인 것이거나, 내가 속한 팀에 확정된 팀 범위 결정"""
+        """본인 것이거나, 내가 속한 팀에 보이게 된(확인됐거나 유예가 지난) 팀 범위 결정"""
         if decision.owner_github_id == caller.github_id:
             return True
-        if decision.visibility != VISIBILITY_TEAM or decision.status != STATUS_CONFIRMED or not decision.team_id:
+        if not is_team_shared(decision, self.now()) or not decision.team_id:
             return False
         return decision.team_id in dict(await self.repository.member_teams(caller.github_id))
 

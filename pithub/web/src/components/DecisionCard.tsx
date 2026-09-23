@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import type { PublicDecision, Verdict } from "@/lib/decisions";
+import type { SharedDecision, Verdict } from "@/lib/decisions";
 
 const VERDICT_LABEL: Record<Verdict, string> = { approve: "승인", modify: "수정", reject: "거부" };
 
@@ -16,7 +16,7 @@ export function formatDate(iso: string): string {
 }
 
 type CardDecision = Pick<
-  PublicDecision,
+  SharedDecision,
   "id" | "verdict" | "chosen" | "situation" | "proposal" | "human_quote" | "decided_at"
 >;
 

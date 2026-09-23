@@ -7,7 +7,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { PublicDecision } from "@/lib/decisions";
+import type { SharedDecision } from "@/lib/decisions";
 
 export const TEAM_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,38}$/;
 const TEAM_TIMELINE_SIZE = 50;
@@ -43,8 +43,12 @@ export function isJoinRequest(member: Pick<TeamMember, "github_id" | "accepted_a
 }
 
 /** team_decisions 뷰의 행 */
-export interface TeamDecision extends PublicDecision {
+export interface TeamDecision extends SharedDecision {
   owner_github_id: number;
+  /** 작성자가 계정을 지웠다 — 퇴사자의 판단 */
+  departed: boolean;
+  /** 사람이 확인했는가 (아니면 3일 유예가 지나 자동으로 보인 것) */
+  verified: boolean;
   team_id: string;
   team_slug: string;
   consulted: { github_id: number; decision_id: string; predicted?: string }[];
@@ -147,4 +151,16 @@ export async function getTeamDecision(supabase: SupabaseClient, id: string): Pro
 /** 개인 커넥터 주소(…/mcp)에서 팀 커넥터 주소(…/t/<slug>/mcp)를 만든다 */
 export function teamMcpUrl(personalMcpUrl: string, slug: string): string {
   return personalMcpUrl.replace(/\/mcp\/?$/, `/t/${slug}/mcp`);
+}
+
+/** 떠난 사람들 — 팀 결정 중 작성자가 계정을 지운 것을 사람별로 묶는다 */
+export function departedAuthors(decisions: TeamDecision[]): { github_id: number; github_login: string; count: number }[] {
+  const byId = new Map<number, { github_id: number; github_login: string; count: number }>();
+  for (const d of decisions) {
+    if (!d.departed) continue;
+    const row = byId.get(d.owner_github_id) ?? { github_id: d.owner_github_id, github_login: d.github_login, count: 0 };
+    row.count += 1;
+    byId.set(d.owner_github_id, row);
+  }
+  return [...byId.values()];
 }

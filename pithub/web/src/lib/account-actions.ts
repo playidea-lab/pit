@@ -18,7 +18,7 @@ export async function exportMyData(): Promise<void> {
 }
 
 /**
- * 계정 삭제. accounts 행을 지우면 profiles·decisions·review_events·api_tokens 가 연쇄 삭제된다.
+ * 계정 삭제. 본인 것과 아직 팀에 보이지 않은 것은 지우고, 이미 팀에 보인 판단은 회사의 기록으로 남긴다 (D-0010).
  * auth.users 는 사용자 세션으로 지울 수 없으므로(관리 API 필요) 로그아웃만 한다 —
  * 같은 GitHub로 다시 로그인하면 빈 계정이 새로 만들어진다.
  */

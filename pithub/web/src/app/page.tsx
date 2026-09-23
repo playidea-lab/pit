@@ -33,28 +33,28 @@ const SCENES = [
 /** 들어온 사람이 셋 중 누구인지 — 각자 할 일만 */
 const ROLES = [
   {
-    title: "혼자 쓴다",
-    body: "claude.ai · Claude Code · Codex 어디든 커넥터 하나를 붙인다. 기록은 본인만 본다.",
-    cta: ["연결하기", "/connect"],
+    title: "팀을 만든다",
+    body: "회사 팀을 만들고 저장소에 .mcp.json 한 줄을 커밋한다. 팀원은 승인 한 번으로 들어온다.",
+    cta: ["팀 만들기", "/teams"],
   },
   {
-    title: "팀에 초대받았다",
+    title: "팀에 들어왔다",
     body: "팀 저장소를 받아 세션을 열면 로그인만 물어본다. 그 뒤로는 평소대로 일한다. 첫 기록이 곧 가입 요청이다.",
     cta: ["팀 보기", "/teams"],
   },
   {
-    title: "팀을 만든다",
-    body: "팀을 만들고 저장소에 .mcp.json 한 줄을 커밋한다. 팀원은 승인 한 번으로 들어온다.",
-    cta: ["팀 만들기", "/teams"],
+    title: "기획·경영 쪽이다",
+    body: "claude.ai에 커넥터 하나를 붙인다. 당신이 정한 방향이 개발자의 AI에 먼저 도착한다.",
+    cta: ["연결하기", "/connect"],
   },
 ] as const;
 
 /** 경계 — 정직한 한계를 먼저 말한다 */
 const POINTS = [
   ["원문은 나가지 않습니다", "대화 자체는 저장하지 않습니다. 결정 한 건의 요약과 당신의 말 한 줄만 받습니다."],
-  ["기본은 비공개", "기록은 본인만 봅니다. 팀에 보이는 것은 당신이 “맞음”을 누른 결정뿐입니다."],
-  ["빠지기도, 잘못 붙기도 합니다", "기록은 AI의 재량입니다. 그래서 확인이 있고, 확인은 쓰는 순간에만 합니다."],
-  ["언제든 지웁니다", "결정 하나든 계정 전체든, 삭제하면 정말로 사라집니다."],
+  ["회사 밖으로 나가지 않습니다", "공개 기능이 없습니다. 판단은 회사 팀 안에서만 보입니다."],
+  ["3일 동안은 당신 것입니다", "팀 저장소에서 기록된 판단은 3일 뒤 팀에 보입니다. 그 전에 빼거나 고칠 수 있습니다."],
+  ["팀에 보인 뒤에는 회사의 기록입니다", "퇴사해도 남아 후임에게 답합니다. 지울 수 있는 것은 팀 소유자뿐입니다."],
 ] as const;
 
 function Scene({ when, lines }: (typeof SCENES)[number]) {
@@ -143,13 +143,14 @@ export default async function HomePage() {
         <div className={account ? "pt-4" : "pt-8"}>
           <p className="label mb-4">pithub</p>
           <h1 className="mb-5 text-[40px] font-semibold leading-[1.15] tracking-tight text-ink">
-            AI가 같은 실수를
+            팀이 AI와 내린 판단을
             <br />
-            <span className="text-accent">두 번 하지 않게</span>
+            <span className="text-accent">회사의 기억으로</span>
           </h1>
           <p className="muted max-w-xl text-[17px] leading-relaxed">
-            당신이 거부하고 고치고 방향을 정한 순간을 AI가 스스로 기록합니다. 다음 세션의 AI는 — 당신의 것이든
-            팀원의 것이든 — 제안하기 전에 그 기록을 먼저 찾아봅니다.
+            구성원이 AI의 제안을 거부하고 고치고 방향을 정한 순간이 팀의 판단 그래프로 쌓입니다. 동료의 AI는 제안하기 전에
+            그 판단을 먼저 찾아보고, 기획자는 개발자를 부르지 않고 &ldquo;왜&rdquo;를 알게 됩니다. 사람이 떠나도 판단은
+            남습니다.
           </p>
         </div>
 
@@ -160,7 +161,7 @@ export default async function HomePage() {
         </div>
 
         <div>
-          <h2 className="mb-5 text-[15px] font-semibold text-ink">당신은 누구입니까</h2>
+          <h2 className="mb-5 text-[15px] font-semibold text-ink">어디서 시작하나</h2>
           <div className="grid gap-4 sm:grid-cols-3">
             {ROLES.map(({ title, body, cta }) => (
               <div key={title} className="card flex flex-col">
@@ -188,7 +189,7 @@ export default async function HomePage() {
           <a href="https://github.com/playidea-lab/pit" className="link">
             github.com/playidea-lab/pit
           </a>
-          . 직접 돌릴 수도 있습니다.
+          . 회사 서버에 직접 설치할 수도 있습니다.
         </p>
       </section>
     </main>

@@ -5,8 +5,9 @@ import DecisionCard from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import { getMyAccount } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
-import { approveMember, inviteMember, leaveTeam, removeMember } from "@/lib/team-actions";
+import { approveMember, erasePersona, inviteMember, leaveTeam, removeMember } from "@/lib/team-actions";
 import {
+  departedAuthors,
   getTeamBySlug,
   isJoinRequest,
   listTeamDecisions,
@@ -111,6 +112,7 @@ export default async function TeamPage({ params }: PageProps) {
   const principles = decisions.filter((d) => d.tags.includes("principle"));
   const recent = decisions.filter((d) => !d.tags.includes("principle")).slice(0, RECENT_SIZE);
   const url = teamMcpUrl(process.env[MCP_URL_ENV] ?? "", slug);
+  const departed = departedAuthors(decisions);
 
   return (
     <main>
@@ -144,7 +146,7 @@ export default async function TeamPage({ params }: PageProps) {
           <h2 className="mb-3 text-[15px] font-semibold text-ink">최근 팀 결정</h2>
           {recent.length === 0 ? (
             <div className="empty">
-              아직 팀에 확정된 결정이 없습니다. 팀 커넥터로 기록된 결정을 각자 정리함에서 확인하면 여기 나타납니다.
+              아직 팀에 보인 결정이 없습니다. 팀 커넥터로 기록된 결정은 확인하거나 3일이 지나면 여기 나타납니다.
             </div>
           ) : (
             <div className="space-y-3">
@@ -170,10 +172,31 @@ export default async function TeamPage({ params }: PageProps) {
               <button className="btn btn-secondary shrink-0">초대</button>
             </form>
           )}
+          {departed.length > 0 && (
+            <div className="mt-5 border-t border-border pt-4">
+              <p className="label mb-2">떠난 구성원 · 판단은 팀에 남아 후임에게 답합니다</p>
+              <ul className="divide-y divide-border">
+                {departed.map((d) => (
+                  <li key={d.github_id} className="flex items-center gap-3 py-2 text-sm">
+                    <span className="muted">{d.github_login}</span>
+                    <span className="faint text-xs">판단 {d.count}건</span>
+                    {isOwner && (
+                      <form action={erasePersona} className="ml-auto">
+                        <input type="hidden" name="team_id" value={team.id} />
+                        <input type="hidden" name="slug" value={team.slug} />
+                        <input type="hidden" name="github_id" value={d.github_id} />
+                        <button className="btn btn-danger h-7 px-2 text-xs">페르소나 삭제</button>
+                      </form>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className="faint mt-3 text-xs">
             보통은 초대할 필요가 없습니다 — 팀 저장소에서 팀 주소로 처음 기록하는 사람이 여기 가입 요청으로 나타납니다.
-            아이디로 초대하려면 그 사람이 pithub에 GitHub로 로그인한 적이 있어야 합니다. 팀을 나가도 팀 범위로 확인한
-            결정은 팀에 남습니다. 비공개 결정은 애초에 팀이 본 적이 없습니다.
+            아이디로 초대하려면 그 사람이 pithub에 GitHub로 로그인한 적이 있어야 합니다. 팀에 보인 판단은 회사의 기록이라 사람이 나가거나
+            계정을 지워도 남고, 소유자만 지웁니다. 본인만 보던 결정은 애초에 팀이 본 적이 없습니다.
           </p>
         </div>
       </section>

@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type Verdict = "approve" | "modify" | "reject";
 export type DecisionStatus = "draft" | "confirmed" | "discarded";
-export type Visibility = "private" | "team" | "friends" | "public";
+export type Visibility = "private" | "team";
 
 /** decisions 테이블의 행 (소유자만 보는 열 포함) */
 export interface Decision {
@@ -37,8 +37,8 @@ export interface Decision {
   redactions: Record<string, number>;
 }
 
-/** public_decisions 뷰의 행 — 출처·가림 내역이 없다 */
-export interface PublicDecision {
+/** 남에게 보여 주는 결정의 열 — 출처·가림 내역이 없다 (team_decisions 뷰가 이 모양을 넓힌다) */
+export interface SharedDecision {
   id: string;
   github_login: string;
   avatar_url: string | null;
@@ -155,28 +155,20 @@ export async function getMyDecision(supabase: SupabaseClient, id: string): Promi
   return (data as Decision | null) ?? null;
 }
 
-export async function listPublicDecisions(
-  supabase: SupabaseClient,
-  handle: string,
-  verdict?: Verdict,
-): Promise<PublicDecision[]> {
-  let query = supabase
-    .from("public_decisions")
-    .select("*")
-    .eq("github_login", handle)
-    .order("decided_at", { ascending: false })
-    .limit(TIMELINE_PAGE_SIZE);
-  if (verdict) query = query.eq("verdict", verdict);
-  const { data, error } = await query;
-  if (error) fail("listPublicDecisions", error);
-  return (data ?? []) as PublicDecision[];
+/** 팀 범위 초안이 팀에 자동으로 보이기까지의 유예 — DB public.team_share_grace() 와 같아야 한다 (D-0010) */
+export const TEAM_SHARE_GRACE_DAYS = 3;
+const MS_PER_DAY = 86_400_000;
+
+/** 팀 범위 초안이 팀에 보이게 되는 시각. 팀 범위가 아니면 null. */
+export function teamShareAt(decision: Pick<Decision, "visibility" | "created_at">): Date | null {
+  if (decision.visibility !== "team") return null;
+  return new Date(new Date(decision.created_at).getTime() + TEAM_SHARE_GRACE_DAYS * MS_PER_DAY);
 }
 
-export async function getPublicDecision(
-  supabase: SupabaseClient,
-  id: string,
-): Promise<PublicDecision | null> {
-  const { data, error } = await supabase.from("public_decisions").select("*").eq("id", id).maybeSingle();
-  if (error) fail("getPublicDecision", error);
-  return (data as PublicDecision | null) ?? null;
+/** 팀에 보이는가 — 확인됐거나 유예가 지났다. 보이게 된 뒤에는 본인도 빼지 못한다. */
+export function isTeamShared(decision: Pick<Decision, "visibility" | "status" | "created_at">, now: Date): boolean {
+  if (decision.visibility !== "team" || decision.status === "discarded") return false;
+  if (decision.status === "confirmed") return true;
+  const at = teamShareAt(decision);
+  return at !== null && at.getTime() <= now.getTime();
 }

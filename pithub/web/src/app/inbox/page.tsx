@@ -4,10 +4,22 @@ import { redirect } from "next/navigation";
 import { VerdictBadge, formatDate } from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import VerifyBar from "@/components/VerifyBar";
-import { getMyAccount, leaksVerdict, listUnverified, needsAttention, weeklySample, type Decision } from "@/lib/decisions";
+import {
+  getMyAccount,
+  leaksVerdict,
+  listUnverified,
+  needsAttention,
+  teamShareAt,
+  weeklySample,
+  type Decision,
+} from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
+
+function shareDate(decision: Decision): string {
+  return teamShareAt(decision)?.toLocaleDateString("ko-KR") ?? "";
+}
 
 function Item({ decision }: { decision: Decision }) {
   const redacted = Object.values(decision.redactions).reduce((a, b) => a + b, 0);
@@ -17,7 +29,9 @@ function Item({ decision }: { decision: Decision }) {
         <VerdictBadge verdict={decision.verdict} chosen={decision.chosen} />
         <span className="faint">{formatDate(decision.decided_at)}</span>
         {decision.source.project && <span className="faint">{decision.source.project}</span>}
-        {decision.visibility === "team" && <span className="badge badge-choice">팀 · 확인하면 팀에 보임</span>}
+        {decision.visibility === "team" && (
+          <span className="badge badge-choice">팀 · {shareDate(decision)} 자동으로 보임 · 빼려면 자세히</span>
+        )}
         {redacted > 0 && <span className="badge badge-modify">가림 {redacted}곳</span>}
         {decision.tags.includes("principle") && <span className="badge badge-choice">원칙</span>}
         {decision.supersedes.length > 0 && <span className="badge badge-choice">이전 결정을 뒤집음</span>}
@@ -89,7 +103,7 @@ export default async function TriagePage() {
               <div>
                 <div className="mb-3 flex items-baseline gap-3">
                   <h2 className="text-[15px] font-semibold text-ink">봐 둘 만한 것</h2>
-                  <span className="faint text-xs">팀에 갈 기록, 거부·수정, 원칙, 뒤집은 결정, 가림, 설명에 판정이 섞인 기록 · {flagged.length}건</span>
+                  <span className="faint text-xs">곧 팀에 보일 기록, 거부·수정, 원칙, 뒤집은 결정, 가림, 설명에 판정이 섞인 기록 · {flagged.length}건</span>
                 </div>
                 <div className="space-y-3">
                   {flagged.map((d) => (
