@@ -753,3 +753,55 @@ def test_supersede_is_refused_to_the_author_of_the_older_decision(db):
 
     with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", alice):
         db.execute("select public.resolve_conflict(%s, 'supersede')", (link,))
+
+
+# --- G3: 이름 맞추기 --------------------------------------------------------------
+
+
+def test_similar_team_nodes_are_merge_candidates_and_merging_moves_edges_and_keeps_an_alias(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    for decision_id in ("PD-1", "PD-2", "PD-3"):
+        _team_draft(db, ALICE_GITHUB_ID, decision_id, team, age_days=4)
+    big = _node(db, "평가 데이터 분할", team=team)
+    small = _node(db, "평가 데이터 분할법", team=team)
+    other = _node(db, "로그인 화면", team=team)
+    for decision_id, node in (("PD-1", big), ("PD-2", big), ("PD-3", small), ("PD-3", other)):
+        _about(db, decision_id, node)
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    outsider = sign_in_with_github(db, 3003, "carol")
+
+    with acting_as(db, "authenticated", outsider):
+        assert db.execute("select count(*) from public.node_merge_candidates()").fetchone()[0] == 0
+        with pytest.raises(psycopg.errors.InsufficientPrivilege), db.transaction():
+            db.execute("select public.merge_nodes(%s, %s)", (big, small))
+    with acting_as(db, "authenticated", bob):
+        rows = db.execute("select keep_name, drop_name from public.node_merge_candidates()").fetchall()
+        assert rows == [("평가 데이터 분할", "평가 데이터 분할법")]
+        db.execute("select public.merge_nodes(%s, %s)", (big, small))
+        assert db.execute("select count(*) from public.node_merge_candidates()").fetchone()[0] == 0
+
+    assert sorted(ids(db, f"select decision_id from public.decision_nodes where node_id = '{big}'")) == ["PD-1", "PD-2", "PD-3"]
+    assert db.execute("select aliases from public.nodes where id = %s", (big,)).fetchone()[0] == ["평가 데이터 분할법"]
+    assert db.execute("select merged_into::text, merged_by from public.nodes where id = %s", (small,)).fetchone() == (big, BOB_GITHUB_ID)
+
+
+def test_dismissed_pair_is_not_asked_again_and_other_namespaces_never_pair(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    record_via_mcp(db, ALICE_GITHUB_ID, "alice", "PD-p")
+    _team_draft(db, ALICE_GITHUB_ID, "PD-t", team, age_days=4)
+    personal = _node(db, "캐시 전략", owner=ALICE_GITHUB_ID)
+    team_a = _node(db, "캐시 전략", team=team)
+    team_b = _node(db, "캐시 전략들", team=team)
+    _about(db, "PD-p", personal)
+    _about(db, "PD-t", team_a)
+    _about(db, "PD-t", team_b)
+    alice = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+
+    with acting_as(db, "authenticated", alice):
+        pairs = db.execute("select keep_id::text, drop_id::text from public.node_merge_candidates()").fetchall()
+        assert len(pairs) == 1 and personal not in pairs[0]
+        db.execute("select public.dismiss_node_merge(%s, %s)", (team_b, team_a))
+        assert db.execute("select count(*) from public.node_merge_candidates()").fetchone()[0] == 0
+        with pytest.raises(psycopg.errors.InvalidParameterValue), db.transaction():
+            db.execute("select public.merge_nodes(%s, %s)", (team_a, personal))

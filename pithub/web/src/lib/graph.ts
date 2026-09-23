@@ -149,3 +149,23 @@ export async function listConflictCandidates(supabase: SupabaseClient, me: numbe
     return a && b && (a.mine || b.mine) ? [{ id: r.id, a, b }] : [];
   });
 }
+
+export interface MergeCandidate {
+  keep_id: string;
+  keep_name: string;
+  keep_count: number;
+  drop_id: string;
+  drop_name: string;
+  drop_count: number;
+  kind: NodeKind;
+  similarity: number;
+}
+
+const MERGE_LIST_LIMIT = 10;
+
+/** 이름이 비슷한 노드 쌍 — 내가 다룰 수 있는 이름 공간에서만 (G3). 많이 쓰인 쪽이 keep. */
+export async function listMergeCandidates(supabase: SupabaseClient): Promise<MergeCandidate[]> {
+  const { data, error } = await supabase.rpc("node_merge_candidates", { max_pairs: MERGE_LIST_LIMIT });
+  if (error) fail("listMergeCandidates", error);
+  return (data ?? []) as MergeCandidate[];
+}

@@ -124,3 +124,16 @@ export async function resolveConflict(form: FormData): Promise<void> {
   if (error) throw new Error(`충돌 처리 실패: ${error.message}`);
   revalidatePath("/inbox");
 }
+
+/** 같은 주제입니까? — 합치기(keep 에 drop 을 합치고 drop 이름은 별칭으로) 또는 다른 주제 (G3) */
+export async function curateNodes(form: FormData): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+  const keep = text(form, "keep_id");
+  const drop = text(form, "drop_id");
+  const { error } =
+    text(form, "action") === "merge"
+      ? await supabase.rpc("merge_nodes", { keep, drop_node: drop })
+      : await supabase.rpc("dismiss_node_merge", { node_x: keep, node_y: drop });
+  if (error) throw new Error(`주제 정리 실패: ${error.message}`);
+  revalidatePath("/inbox");
+}

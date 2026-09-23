@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { VerdictBadge, formatDate } from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import VerifyBar from "@/components/VerifyBar";
-import { resolveConflict } from "@/lib/actions";
+import { curateNodes, resolveConflict } from "@/lib/actions";
 import {
   getMyAccount,
   leaksVerdict,
@@ -14,7 +14,13 @@ import {
   weeklySample,
   type Decision,
 } from "@/lib/decisions";
-import { listConflictCandidates, type ConflictCandidate } from "@/lib/graph";
+import {
+  KIND_LABEL,
+  listConflictCandidates,
+  listMergeCandidates,
+  type ConflictCandidate,
+  type MergeCandidate,
+} from "@/lib/graph";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +71,29 @@ function Side({ label, decision }: { label: string; decision: ConflictCandidate[
   );
 }
 
+function Merge({ pair }: { pair: MergeCandidate }) {
+  return (
+    <form action={curateNodes} className="card flex flex-wrap items-center gap-3">
+      <input type="hidden" name="keep_id" value={pair.keep_id} />
+      <input type="hidden" name="drop_id" value={pair.drop_id} />
+      <span className="faint text-xs">{KIND_LABEL[pair.kind]}</span>
+      <Link href={`/topic/${pair.keep_id}`} className="link text-sm">
+        {pair.keep_name} <span className="faint">({pair.keep_count})</span>
+      </Link>
+      <span className="faint text-xs">와</span>
+      <Link href={`/topic/${pair.drop_id}`} className="link text-sm">
+        {pair.drop_name} <span className="faint">({pair.drop_count})</span>
+      </Link>
+      <button name="action" value="merge" className="btn btn-primary ml-auto h-8 px-3">
+        같은 주제 · 합치기
+      </button>
+      <button name="action" value="dismiss" className="btn btn-ghost h-8 px-3">
+        다른 주제
+      </button>
+    </form>
+  );
+}
+
 function Conflict({ conflict }: { conflict: ConflictCandidate }) {
   return (
     <article className="card space-y-3">
@@ -92,7 +121,10 @@ export default async function TriagePage() {
 
   const supabase = await createServerSupabaseClient();
   const [account, unverified] = await Promise.all([getMyAccount(supabase), listUnverified(supabase)]);
-  const conflicts = account ? await listConflictCandidates(supabase, account.github_id) : [];
+  const [conflicts, merges] = await Promise.all([
+    account ? listConflictCandidates(supabase, account.github_id) : Promise.resolve([]),
+    listMergeCandidates(supabase),
+  ]);
   const sample = weeklySample(unverified);
   const sampleIds = new Set(sample.map((d) => d.id));
   const flagged = unverified.filter((d) => needsAttention(d) && !sampleIds.has(d.id));
@@ -120,6 +152,22 @@ export default async function TriagePage() {
             <div className="space-y-3">
               {conflicts.map((c) => (
                 <Conflict key={c.id} conflict={c} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {merges.length > 0 && (
+          <div>
+            <div className="mb-3 flex items-baseline gap-3">
+              <h2 className="text-[15px] font-semibold text-ink">같은 주제입니까?</h2>
+              <span className="faint text-xs">
+                AI가 같은 것을 다르게 부른 것 같습니다 · 합치면 앞으로 두 이름 모두 한 주제로 모입니다
+              </span>
+            </div>
+            <div className="space-y-2">
+              {merges.map((m) => (
+                <Merge key={`${m.keep_id}-${m.drop_id}`} pair={m} />
               ))}
             </div>
           </div>
