@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from pydantic import ValidationError
 
-from pit.server.graph import GraphReader, GraphWriter
+from pit.server.graph import GraphReader, GraphWriter, readable_for
 from pit.server.identity import Caller
 from pit.server.ratelimit import RateLimiter
 from pit.server.records import (
@@ -111,7 +111,8 @@ class DecisionTools:
     async def _attach_graph(self, caller: Caller, decision: StoredDecision, payload: RecordDecisionInput) -> dict[str, object]:
         """결정을 그래프에 매단다. 링크와 충돌 후보는 호출자가 읽을 수 있는 결정만 가리킨다."""
         teams = dict(await self.repository.member_teams(caller.github_id))
-        return await GraphWriter(self.repository, self._reader(caller, teams).readable).attach(decision, payload)
+        writer = GraphWriter(self.repository, self._reader(caller, teams).readable)
+        return await writer.attach(decision, payload.about, payload.project, payload.links)
 
     async def _apply_scope(self, caller: Caller, payload: RecordDecisionInput, decision: StoredDecision) -> StoredDecision:
         """팀 커넥터로 들어왔으면 팀 범위(주소가 힌트보다 세다), 아니면 프로젝트별 기본값, 없으면 private.
@@ -203,14 +204,7 @@ class DecisionTools:
 
     def _reader(self, caller: Caller, teams: dict[str, str]) -> GraphReader:
         """볼 수 있는 결정만 돌려주는 그래프 읽기 — 본인 것, 또는 teams 안에서 팀에 보인 것"""
-        now = self.now()
-
-        def readable(decision: StoredDecision) -> bool:
-            if decision.owner_github_id == caller.github_id:
-                return decision.status != "discarded"
-            return decision.team_id in teams and is_team_shared(decision, now)
-
-        return GraphReader(self.repository, readable)
+        return GraphReader(self.repository, readable_for(caller.github_id, teams, self.now()))
 
     async def _can_read(self, caller: Caller, decision: StoredDecision) -> bool:
         """본인 것이거나, 내가 속한 팀에 보이게 된(확인됐거나 유예가 지난) 팀 범위 결정"""

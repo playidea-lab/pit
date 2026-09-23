@@ -53,6 +53,11 @@ def resolve_url(explicit: str | None, saved: RemoteConfig | None) -> str:
     return url.rstrip("/")
 
 
+# 주제가 아니라 표지인 태그
+NON_TOPIC_TAGS = frozenset({"principle"})
+MAX_PUSH_TOPICS = 6
+
+
 def to_wire(decision: Decision) -> dict[str, object]:
     """로컬 Decision → 서버의 StoredDecision 모양. 소유자는 서버가 토큰으로 정하므로 0을 보낸다."""
     return {
@@ -77,6 +82,8 @@ def to_wire(decision: Decision) -> dict[str, object]:
             "project": decision.project or "",
         },
         "dedupe_key": decision.id,
+        # 그래프 규약(G2): 로컬 태그를 주제 노드로 올린다. 프로젝트는 source.project 로 서버가 노드로 만든다.
+        "about": [{"kind": "topic", "name": tag} for tag in decision.tags if tag and tag not in NON_TOPIC_TAGS][:MAX_PUSH_TOPICS],
     }
 
 

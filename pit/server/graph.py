@@ -8,9 +8,10 @@ import re
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from pit.server.conflicts import conflict_candidates
-from pit.server.records import SUMMARY_CHARS, RecordDecisionInput, StoredDecision
+from pit.server.records import SUMMARY_CHARS, LinkRef, NodeRef, StoredDecision, is_team_shared
 from pit.server.repository import DecisionRepository
 from pit.transcripts.redact import RedactionRules, redact
 
@@ -55,12 +56,15 @@ class GraphWriter:
         target = await self.repository.get_by_id(decision_id)
         return target is not None and self.readable(target)
 
-    async def attach(self, decision: StoredDecision, payload: RecordDecisionInput) -> dict[str, object]:
-        """노드를 찾거나 만들어 매달고, 링크를 잇는다. 결과는 도구 응답에 싣는 짧은 요약."""
+    async def attach(
+        self, decision: StoredDecision, about: list[NodeRef], project: str | None, links: list[LinkRef]
+    ) -> dict[str, object]:
+        """노드를 찾거나 만들어 매달고, 링크를 잇는다. MCP 기록과 로컬 push 가 같은 규약으로 부른다.
+        결과는 도구 응답에 싣는 짧은 요약."""
         rules = RedactionRules()
-        refs = [(ref.kind, redact(ref.name, rules).text) for ref in payload.about]
-        if payload.project:
-            refs.append((KIND_PROJECT, redact(payload.project, rules).text))
+        refs = [(ref.kind, redact(ref.name, rules).text) for ref in about]
+        if project:
+            refs.append((KIND_PROJECT, redact(project, rules).text))
         namespace = Namespace.of(decision)
         node_ids: list[str] = []
         topics: list[str] = []
@@ -75,7 +79,7 @@ class GraphWriter:
         await self.repository.attach_nodes(decision.id, node_ids)
 
         linked, skipped = [], []
-        for link in payload.links:
+        for link in links:
             if link.to != decision.id and await self._can_link_to(link.to):
                 linked.append((link.to, link.relation, LINK_STATUS[link.relation]))
             else:
@@ -131,3 +135,14 @@ class GraphReader:
              "proposal": found[other_id].proposal[:SUMMARY_CHARS]}
             for other_id, (rel, status, direction) in other.items() if other_id in found
         ]  # fmt: skip
+
+
+def readable_for(github_id: int, teams: dict[str, str], now: datetime) -> Callable[[StoredDecision], bool]:
+    """이 사람이 볼 수 있는 결정인가 — 본인 것(버린 것 제외), 또는 속한 팀에 보인 것. DB의 can_see_decision 과 같은 규칙."""
+
+    def readable(decision: StoredDecision) -> bool:
+        if decision.owner_github_id == github_id:
+            return decision.status != "discarded"
+        return decision.team_id in teams and is_team_shared(decision, now)
+
+    return readable

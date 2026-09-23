@@ -82,7 +82,7 @@ def test_push_rewrites_owner_origin_and_id_from_token(api):
     response = _run(client.post("/api/v1/decisions", json=body, headers={"Authorization": f"Bearer {token}"}))
 
     (row,) = repository.rows
-    assert response.json() == {"upserted": 1}
+    assert response.json() == {"upserted": 1, "graph": 0}
     assert (row.owner_github_id, row.origin, row.status, row.visibility) == (1001, "local_extract", "confirmed", "private")
     assert row.id != "PD-20260901-local001" and row.source["local_id"] == "PD-20260901-local001"
 
@@ -139,3 +139,33 @@ def test_pull_bad_since_is_bad_request(api):
     response = _run(client.get("/api/v1/decisions", params={"since": "yesterday"}, headers={"Authorization": f"Bearer {token}"}))
 
     assert response.status_code == 400
+
+
+def test_push_attaches_about_and_project_nodes_like_mcp_records(api):
+    """로컬 push 도 MCP 기록과 같은 그래프 규약 — about 은 주제 노드, source.project 는 프로젝트 노드"""
+    client, repository, token = api
+    item = {**_local_decision("PD-20260901-local002"), "source": {"project": "borch"}, "about": [{"name": "평가 분할"}]}
+
+    response = _run(client.post("/api/v1/decisions", json={"decisions": [item]}, headers={"Authorization": f"Bearer {token}"}))
+
+    assert response.json() == {"upserted": 1, "graph": 1}
+    assert sorted(key[2:] for key in repository.nodes) == [("project", "borch"), ("topic", "평가 분할")]
+    assert len(repository.decision_nodes) == 2
+
+
+def test_to_wire_maps_local_tags_to_topics_but_not_the_principle_marker():
+    from datetime import datetime, timezone
+
+    from pit.decisions.models import Decision, ExtractionMethod
+    from pit.personal.remote import to_wire
+
+    EXTRACTION_METHOD = next(iter(ExtractionMethod)).value  # noqa: N806
+
+    local = Decision.model_validate({
+        "id": "D-1", "person": "me", "kind": "verdict", "decided_at": datetime(2026, 9, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 9, 1, tzinfo=timezone.utc), "verdict": "reject",
+        "source": {"tool": "claude-code", "session_id": "s", "device": "mac", "verdict_uuid": "u", "verdict_line_no": 1},
+        "extractor": {"method": EXTRACTION_METHOD}, "tags": ["캐시", "principle"],
+    })  # fmt: skip
+
+    assert to_wire(local)["about"] == [{"kind": "topic", "name": "캐시"}]

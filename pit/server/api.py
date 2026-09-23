@@ -8,7 +8,7 @@
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Protocol
 
 from pydantic import BaseModel, Field, ValidationError
@@ -16,8 +16,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from pit.decisions.ids import make_decision_id
+from pit.server.graph import GraphWriter, readable_for
 from pit.server.identity import Caller
-from pit.server.records import ORIGIN_MCP, StoredDecision
+from pit.server.records import MAX_ABOUT, MAX_LINKS, ORIGIN_MCP, LinkRef, NodeRef, StoredDecision
+from pit.server.repository import DecisionRepository
 from pit.server.tokens import hash_token, looks_like_token
 
 logger = logging.getLogger(__name__)
@@ -30,7 +32,7 @@ HTTP_UNAUTHORIZED = 401
 HTTP_TOO_LARGE = 413
 
 
-class TokenRepository(Protocol):
+class TokenRepository(DecisionRepository, Protocol):
     async def find_token_owner(self, token_hash: str) -> Caller | None: ...
 
     async def upsert_local(self, decisions: list[StoredDecision]) -> int:
@@ -40,8 +42,18 @@ class TokenRepository(Protocol):
     async def list_mine(self, owner_github_id: int, since: datetime | None, limit: int) -> list[StoredDecision]: ...
 
 
+class PushedDecision(StoredDecision):
+    """로컬에서 올리는 결정 — MCP 기록과 같은 그래프 규약(about·links)을 함께 싣는다 (G2)"""
+
+    about: list[NodeRef] = Field(default_factory=list, max_length=MAX_ABOUT)
+    links: list[LinkRef] = Field(default_factory=list, max_length=MAX_LINKS)
+
+
+GRAPH_FIELDS = {"about", "links"}
+
+
 class PushPayload(BaseModel):
-    decisions: list[StoredDecision] = Field(max_length=MAX_PUSH_BATCH)
+    decisions: list[PushedDecision] = Field(max_length=MAX_PUSH_BATCH)
 
 
 async def authenticate(request: Request, tokens: TokenRepository) -> Caller | None:
@@ -90,10 +102,24 @@ class LocalApi:
 
         # 소유자·출처·id는 클라이언트가 정하지 않는다. id를 토큰 주인 기준으로 다시 만들어야
         # 남의 행과 같은 id를 보내 덮어쓰는 일이 구조적으로 불가능하다. 로컬 id는 출처에 남긴다.
-        rows = [_owned_by(decision, caller) for decision in payload.decisions]
+        pushed = [(_owned_by(decision, caller), decision) for decision in payload.decisions]
+        rows = [StoredDecision.model_validate(row.model_dump(exclude=GRAPH_FIELDS)) for row, _ in pushed]
         count = await self._tokens.upsert_local(rows)
-        logger.info("로컬 결정 push", extra={"github_id": caller.github_id, "count": count})
-        return JSONResponse({"upserted": count})
+        linked = await self._attach_graph(caller, rows, [original for _, original in pushed])
+        logger.info("로컬 결정 push", extra={"github_id": caller.github_id, "count": count, "graph": linked})
+        return JSONResponse({"upserted": count, "graph": linked})
+
+    async def _attach_graph(self, caller: Caller, rows: list[StoredDecision], originals: list[PushedDecision]) -> int:
+        """push 된 결정을 MCP 기록과 같은 규약으로 그래프에 매단다. 매단 결정 수를 돌려준다."""
+        teams = dict(await self._tokens.member_teams(caller.github_id))
+        writer = GraphWriter(self._tokens, readable_for(caller.github_id, teams, datetime.now(timezone.utc)))
+        attached = 0
+        for row, original in zip(rows, originals, strict=True):
+            project = row.source.get("project") or None
+            if original.about or original.links or project:
+                await writer.attach(row, original.about, project, original.links)
+                attached += 1
+        return attached
 
     async def pull(self, request: Request) -> JSONResponse:
         caller = await authenticate(request, self._tokens)
