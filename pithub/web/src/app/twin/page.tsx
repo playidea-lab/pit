@@ -102,9 +102,10 @@ export default async function TwinPage() {
           )}
         </div>
 
-        <div className="card">
-          <h2 className="mb-1 text-[15px] font-semibold text-ink">판정기 성적 · 당신의 채점 기준</h2>
-          <p className="muted mb-3 text-xs">
+        {/* 판정기 비교는 파일럿 운영자용 — 처음 온 팀원이 kNN·JEV 용어부터 보지 않게 접어 둔다 */}
+        <details className="card">
+          <summary className="cursor-pointer text-[15px] font-semibold text-ink">판정기 성적 · 당신의 채점 기준</summary>
+          <p className="muted mb-3 mt-2 text-xs">
             답은 kNN(서버 안, 무료)이 하고, 팀이 동의했으면 JEV가 같은 질문을 따로 판정해 기록만 합니다. 아래 기록에서
             &ldquo;당신이라면?&rdquo;에 답할수록 어느 판정기가 당신을 더 잘 아는지 드러납니다.
           </p>
@@ -118,7 +119,7 @@ export default async function TwinPage() {
               </div>
             ))}
           </div>
-        </div>
+        </details>
 
         <div>
           <h2 className="mb-3 text-[15px] font-semibold text-ink">

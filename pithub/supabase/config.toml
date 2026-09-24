@@ -44,3 +44,13 @@ redirect_uri = "http://localhost:54321/auth/v1/callback"
 
 [analytics]
 enabled = false
+
+# 로그인 메일 (한국어, 코드 우선 — 링크는 요청한 브라우저에서만 열린다). 운영은 대시보드
+# Authentication → Emails 에 같은 내용을 넣는다: 제목 "pithub 로그인 코드" / "pithub 가입 확인 코드".
+[auth.email.template.magic_link]
+subject = "pithub 로그인 코드"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.confirmation]
+subject = "pithub 가입 확인 코드"
+content_path = "./supabase/templates/confirmation.html"

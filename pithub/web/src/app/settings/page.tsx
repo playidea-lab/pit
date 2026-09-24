@@ -92,7 +92,9 @@ export default async function SettingsPage({ searchParams }: PageProps) {
           </form>
         </Section>
 
-        <Section title="로컬 pit 토큰">
+        <details className="card">
+          <summary className="cursor-pointer text-[15px] font-semibold text-ink">로컬 pit 토큰 · 개발자용 (대부분은 필요 없음)</summary>
+          <div className="mt-2">
           <p className="muted mb-3 text-sm">
             원문 보존과 감사를 원하는 개발자용 CLI(<code className="text-ink">pit login</code>)에 쓰는 토큰입니다. 발급
             직후 한 번만 보입니다.
@@ -131,7 +133,8 @@ export default async function SettingsPage({ searchParams }: PageProps) {
               ))}
             </ul>
           )}
-        </Section>
+          </div>
+        </details>
 
         <div className="card border-[var(--reject-fg)]/30">
           <h2 className="mb-2 text-[15px] font-semibold text-[var(--reject-fg)]">계정 삭제</h2>

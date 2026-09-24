@@ -29,16 +29,17 @@ async function pendingTwinQuestions(): Promise<number> {
   return account ? countPendingQuestions(supabase, account.github_id) : 0;
 }
 
+// 좁은 화면에서는 메뉴만 가로로 밀어 본다 — 초대 링크는 대개 폰의 메신저에서 열린다
 export default async function Header({ signedIn }: HeaderProps) {
   const waiting = signedIn ? await pendingTwinQuestions() : 0;
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-surface/90 backdrop-blur">
-      <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-7 px-6">
-        <Link href="/" className="text-[17px] font-semibold tracking-tight text-ink">
+      <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-4 px-4 sm:gap-7 sm:px-6">
+        <Link href="/" className="shrink-0 text-[17px] font-semibold tracking-tight text-ink">
           <span className="text-accent">pit</span>hub
         </Link>
         {signedIn && (
-          <nav className="flex items-center gap-5 text-sm">
+          <nav className="flex min-w-0 items-center gap-4 overflow-x-auto whitespace-nowrap text-sm sm:gap-5">
             {NAV.map((item) => (
               <Link key={item.href} href={item.href} className="muted transition-colors hover:text-ink">
                 {item.label}
@@ -51,7 +52,7 @@ export default async function Header({ signedIn }: HeaderProps) {
             ))}
           </nav>
         )}
-        <div className="ml-auto">
+        <div className="ml-auto shrink-0">
           <AuthButton />
         </div>
       </div>

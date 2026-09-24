@@ -50,7 +50,7 @@ function InviteCard({ team, inviteUrl }: { team: Team; inviteUrl: string | null 
       <div>
         <h2 className="text-[15px] font-semibold text-ink">팀원 초대</h2>
         <p className="muted text-sm">
-          링크를 팀 채널에 붙이세요. 누르고 GitHub로 로그인하면 승인 없이 바로 팀원이 되고, 연결 안내로 넘어갑니다.
+          링크를 팀 채널에 붙이세요. 누르고 회사 이메일이나 GitHub로 로그인하면 승인 없이 바로 팀원이 되고, 연결 안내로 넘어갑니다.
         </p>
       </div>
       {inviteUrl && <CopyBox value={inviteUrl} label="링크 복사" />}
@@ -277,7 +277,7 @@ export default async function TeamPage({ params }: PageProps) {
             <form action={inviteMember} className="mt-4 flex gap-2">
               <input type="hidden" name="team_id" value={team.id} />
               <input type="hidden" name="slug" value={team.slug} />
-              <input name="login" placeholder="GitHub 아이디" className="input max-w-xs" required />
+              <input name="login" placeholder="pithub 아이디" className="input max-w-xs" required />
               <button className="btn btn-secondary shrink-0">초대</button>
             </form>
           )}
@@ -304,7 +304,7 @@ export default async function TeamPage({ params }: PageProps) {
           )}
           <p className="faint mt-3 text-xs">
             보통은 위의 초대 링크면 충분합니다. 링크 없이 팀 주소로 먼저 기록한 사람은 여기 가입 요청으로 나타납니다.
-            아이디로 초대하려면 그 사람이 pithub에 GitHub로 로그인한 적이 있어야 합니다. 팀에 보인 판단은 회사의 기록이라 사람이 나가거나
+            아이디로 초대하려면 그 사람이 pithub에 로그인한 적이 있어야 합니다(아이디는 설정 화면 맨 위). 팀에 보인 판단은 회사의 기록이라 사람이 나가거나
             계정을 지워도 남고, 소유자만 지웁니다. 본인만 보던 결정은 애초에 팀이 본 적이 없습니다.
           </p>
         </div>

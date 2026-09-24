@@ -42,7 +42,9 @@ export async function GET(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
-    return NextResponse.redirect(`${origin}/?error=auth_callback_error`);
+    // 흔한 원인: 링크를 요청한 브라우저가 아닌 곳(다른 기기·메신저 안 브라우저)에서 열었다 — 코드로 다시 들어오게 한다
+    const retry = new URLSearchParams({ error: "link", next });
+    return NextResponse.redirect(`${origin}/login?${retry.toString()}`);
   }
   // 계정 보장: 지웠다가 다시 온 사람도 계정이 이어지게 (트리거는 첫 가입 때만 돈다)
   const { error: accountError } = await supabase.rpc("ensure_my_account");

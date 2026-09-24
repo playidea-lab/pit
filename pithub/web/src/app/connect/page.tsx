@@ -48,7 +48,7 @@ export default async function ConnectPage({ searchParams }: PageProps) {
         <div className="mb-6">
           <h1 className="mb-2 text-2xl font-semibold tracking-tight text-ink">연결하기</h1>
           <p className="muted leading-relaxed">
-            쓰는 도구에 아래 주소를 한 번 붙이고 GitHub로 로그인하면 끝입니다. 그 뒤로는 할 일이 없습니다 — 평소처럼
+            쓰는 도구에 아래 주소를 한 번 붙이고, 뜨는 창에서 pithub에 로그인(회사 이메일 또는 GitHub)하면 끝입니다. 그 뒤로는 할 일이 없습니다 — 평소처럼
             일하면 됩니다.
           </p>
           {teams.length > 1 && (
@@ -70,7 +70,7 @@ export default async function ConnectPage({ searchParams }: PageProps) {
 
         <Tool name="claude.ai">
           <p>
-            설정 → 커넥터 → <b className="text-ink">커스텀 커넥터 추가</b> → 위 주소 붙여넣기 → GitHub로 로그인.
+            설정 → 커넥터 → <b className="text-ink">커스텀 커넥터 추가</b> → 위 주소 붙여넣기 → 연결 → pithub 로그인.
           </p>
         </Tool>
 

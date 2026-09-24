@@ -40,7 +40,7 @@ export async function inviteMember(form: FormData): Promise<void> {
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.rpc("invite_to_team", { team: teamId, login });
   if (error) {
-    const reason = error.code === "P0002" ? "그 GitHub 아이디로 pithub에 로그인한 적이 없습니다." : error.message;
+    const reason = error.code === "P0002" ? "그 아이디로 pithub에 로그인한 사람이 없습니다." : error.message;
     throw new Error(`초대 실패: ${reason}`);
   }
   revalidatePath(`/t/${slug}`);
