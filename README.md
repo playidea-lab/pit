@@ -113,7 +113,8 @@ cd pithub/web && npm ci && npm run lint && npm run build
 순서는 **DB 마이그레이션 → MCP 서버 → 웹**. 그래서 마이그레이션은 옛 서버와 함께 돌아도 깨지지 않게(확장만) 쓴다.
 열·테이블을 지우는 마이그레이션은 첫 줄을 `-- deploy: after-server` 로 시작해 서버 배포 뒤로 미룬다.
 
-필요한 설정: 저장소 Secrets `FLY_API_TOKEN` · `SUPABASE_ACCESS_TOKEN` · `SUPABASE_DB_PASSWORD`, Variables `SUPABASE_PROJECT_REF`.
+필요한 설정: 저장소 Secrets `FLY_API_TOKEN` · `SUPABASE_DB_PASSWORD`, Variables `SUPABASE_PROJECT_REF` · `SUPABASE_POOLER_HOST` · `SUPABASE_ANON_KEY`(공개값).
+계정 전체 권한인 Supabase 액세스 토큰은 쓰지 않는다 — 마이그레이션은 DB 비밀번호로 세션 풀러에 직접 붙는다.
 없으면 배포 단계는 경고만 남기고 건너뛴다.
 
 ## 기여할 자리

@@ -74,9 +74,11 @@ jobs:
     concurrency: deploy-production
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      # 공개값: 프로젝트 ref · 세션 풀러 호스트(러너에 IPv6가 없어 직접 연결 대신) · anon 키(브라우저에 실리는 값)
       SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      SUPABASE_POOLER_HOST: ${{ vars.SUPABASE_POOLER_HOST }}
+      SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -102,38 +104,39 @@ jobs:
           echo "server=$(echo "$files" | grep -qE '^(pit/|Dockerfile$|fly\.toml$|pyproject\.toml$|uv\.lock$)' && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "web=$(echo "$files" | grep -q '^pithub/web/' && echo true || echo false)" >> "$GITHUB_OUTPUT"
           # 배포 비밀이 아직 없으면(포크·설정 전) 배포하지 않고 경고만 남긴다 — 뒤의 출력이 앞의 것을 덮는다
-          if [ -z "$FLY_API_TOKEN" ] || [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
-            echo "::warning::배포 비밀(FLY_API_TOKEN · SUPABASE_ACCESS_TOKEN · SUPABASE_DB_PASSWORD · vars.SUPABASE_PROJECT_REF)이 없어 배포를 건너뜁니다"
+          if [ -z "$FLY_API_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ] || [ -z "$SUPABASE_PROJECT_REF" ] || [ -z "$SUPABASE_POOLER_HOST" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::warning::배포 설정(secrets FLY_API_TOKEN · SUPABASE_DB_PASSWORD, vars SUPABASE_PROJECT_REF · SUPABASE_POOLER_HOST · SUPABASE_ANON_KEY)이 없어 배포를 건너뜁니다"
             printf 'db=false\nserver=false\nweb=false\n' >> "$GITHUB_OUTPUT"
           fi
           cat "$GITHUB_OUTPUT"
       - uses: superfly/flyctl-actions/setup-flyctl@master
         if: steps.changed.outputs.server == 'true' || steps.changed.outputs.web == 'true'
       - uses: supabase/setup-cli@v1
+        if: steps.changed.outputs.db == 'true'
         with:
           version: 2.109.1
-      - name: Link Supabase
-        if: steps.changed.outputs.db == 'true' || steps.changed.outputs.web == 'true'
-        working-directory: pithub
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+      - name: DB connection
+        if: steps.changed.outputs.db == 'true'
+        run: |
+          # 계정 전체 권한인 Supabase 액세스 토큰 대신 DB 비밀번호 하나로 마이그레이션만 한다 (비밀번호는 퍼센트 인코딩)
+          password=$(jq -rn --arg v "$SUPABASE_DB_PASSWORD" '$v|@uri')
+          echo "::add-mask::$password"
+          echo "DB_URL=postgresql://postgres.$SUPABASE_PROJECT_REF:$password@$SUPABASE_POOLER_HOST:5432/postgres" >> "$GITHUB_ENV"
       - name: DB migrations (expand — before the server)
         if: steps.changed.outputs.db == 'true' && steps.changed.outputs.contract == 'false'
         working-directory: pithub
-        run: supabase db push --yes --password "$SUPABASE_DB_PASSWORD"
+        run: supabase db push --yes --db-url "$DB_URL"
       - name: MCP server
         if: steps.changed.outputs.server == 'true'
         run: flyctl deploy --remote-only
       - name: DB migrations (contract — after the server)
         if: steps.changed.outputs.db == 'true' && steps.changed.outputs.contract == 'true'
         working-directory: pithub
-        run: supabase db push --yes --password "$SUPABASE_DB_PASSWORD"
+        run: supabase db push --yes --db-url "$DB_URL"
       - name: Web
         if: steps.changed.outputs.web == 'true'
         working-directory: pithub/web
         run: |
-          # anon 키는 공개값이지만 저장소에 두지 않고 배포 때마다 Supabase 에서 받는다
-          anon=$(supabase projects api-keys --project-ref "$SUPABASE_PROJECT_REF" -o json | jq -r '.[] | select(.name=="anon") | .api_key')
-          [ -n "$anon" ] || { echo "anon key not found"; exit 1; }
           flyctl deploy --remote-only \
             --build-arg NEXT_PUBLIC_SUPABASE_URL="https://$SUPABASE_PROJECT_REF.supabase.co" \
-            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$anon"
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
