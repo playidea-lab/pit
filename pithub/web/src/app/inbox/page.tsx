@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { VerdictBadge, formatDate } from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import VerifyBar from "@/components/VerifyBar";
-import { curateNodes, resolveConflict } from "@/lib/actions";
+import { curateNodes, curatePrinciple, resolveConflict } from "@/lib/actions";
 import {
   getMyAccount,
   leaksVerdict,
@@ -18,8 +18,10 @@ import {
   KIND_LABEL,
   listConflictCandidates,
   listMergeCandidates,
+  listPrincipleCandidates,
   type ConflictCandidate,
   type MergeCandidate,
+  type PrincipleCandidate,
 } from "@/lib/graph";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 
@@ -94,6 +96,33 @@ function Merge({ pair }: { pair: MergeCandidate }) {
   );
 }
 
+const VERDICT_WORD = { approve: "승인", modify: "수정", reject: "거부" } as const;
+
+function Principle({ candidate }: { candidate: PrincipleCandidate }) {
+  return (
+    <form action={curatePrinciple} className="card space-y-3">
+      <input type="hidden" name="node_id" value={candidate.node_id} />
+      <input type="hidden" name="verdict" value={candidate.verdict} />
+      <p className="text-sm text-ink">
+        <Link href={`/topic/${candidate.node_id}`} className="link">
+          {candidate.node_name}
+        </Link>
+        에서 {candidate.support}번 {VERDICT_WORD[candidate.verdict]}했습니다
+      </p>
+      <ul className="muted list-disc space-y-0.5 pl-5 text-xs">
+        {candidate.proposals.map((p) => (
+          <li key={p}>{p}</li>
+        ))}
+      </ul>
+      <input name="statement" placeholder="한 줄 원칙 (예: 평가는 늘 시간 순으로 나눈다)" className="input" />
+      <div className="flex flex-wrap gap-2">
+        <button name="action" value="compress" className="btn btn-primary h-8 px-3">원칙으로 만들기</button>
+        <button name="action" value="dismiss" className="btn btn-ghost h-8 px-3">그때그때 다름</button>
+      </div>
+    </form>
+  );
+}
+
 function Conflict({ conflict }: { conflict: ConflictCandidate }) {
   return (
     <article className="card space-y-3">
@@ -121,9 +150,10 @@ export default async function TriagePage() {
 
   const supabase = await createServerSupabaseClient();
   const [account, unverified] = await Promise.all([getMyAccount(supabase), listUnverified(supabase)]);
-  const [conflicts, merges] = await Promise.all([
+  const [conflicts, merges, principles] = await Promise.all([
     account ? listConflictCandidates(supabase, account.github_id) : Promise.resolve([]),
     listMergeCandidates(supabase),
+    listPrincipleCandidates(supabase),
   ]);
   const sample = weeklySample(unverified);
   const sampleIds = new Set(sample.map((d) => d.id));
@@ -168,6 +198,22 @@ export default async function TriagePage() {
             <div className="space-y-2">
               {merges.map((m) => (
                 <Merge key={`${m.keep_id}-${m.drop_id}`} pair={m} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {principles.length > 0 && (
+          <div>
+            <div className="mb-3 flex items-baseline gap-3">
+              <h2 className="text-[15px] font-semibold text-ink">원칙 후보</h2>
+              <span className="faint text-xs">
+                같은 주제에서 같은 판단을 거듭했습니다 · 한 줄로 적어 두면 AI의 검색에서 이 원칙이 먼저 나옵니다
+              </span>
+            </div>
+            <div className="space-y-3">
+              {principles.map((c) => (
+                <Principle key={`${c.node_id}-${c.verdict}`} candidate={c} />
               ))}
             </div>
           </div>

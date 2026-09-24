@@ -2,7 +2,7 @@
 
 /**
  * 결정에 대한 쓰기 — 전부 로그인한 사용자의 세션으로 실행되고 RLS가 소유자를 확인한다.
- * 결정을 새로 만드는 동작은 없다. 그것은 MCP 서버의 몫이다.
+ * 결정을 새로 만드는 것은 MCP 서버의 몫이다. 예외는 사람이 직접 쓰는 원칙·트윈 질문의 답(DB 함수가 만든다).
  */
 
 import { revalidatePath } from "next/cache";
@@ -123,6 +123,24 @@ export async function resolveConflict(form: FormData): Promise<void> {
   if (!CONFLICT_ACTIONS.includes(action as (typeof CONFLICT_ACTIONS)[number])) throw new Error("알 수 없는 처리입니다.");
   const { error } = await supabase.rpc("resolve_conflict", { link_id: linkId, action });
   if (error) throw new Error(`충돌 처리 실패: ${error.message}`);
+  revalidatePath("/inbox");
+}
+
+/** 반복된 판단을 한 줄 원칙으로 압축하거나, 원칙이 아니라고 넘긴다 (그래프 G) */
+export async function curatePrinciple(form: FormData): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+  const node = text(form, "node_id");
+  const verdict = text(form, "verdict");
+  if (!VERDICTS.includes(verdict as Verdict)) throw new Error("알 수 없는 판정입니다.");
+  if (text(form, "action") === "dismiss") {
+    const { error } = await supabase.rpc("dismiss_principle", { node, dismissed_verdict: verdict });
+    if (error) throw new Error(`원칙 후보 넘기기 실패: ${error.message}`);
+  } else {
+    const statement = text(form, "statement").slice(0, MAX_TEXT_CHARS);
+    if (!statement) throw new Error("원칙을 한 줄로 적어 주세요.");
+    const { error } = await supabase.rpc("compress_into_principle", { node, principle_verdict: verdict, statement });
+    if (error) throw new Error(`원칙 만들기 실패: ${error.message}`);
+  }
   revalidatePath("/inbox");
 }
 

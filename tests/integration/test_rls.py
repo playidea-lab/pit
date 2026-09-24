@@ -1037,3 +1037,59 @@ def test_alias_routes_later_names_to_the_topic_and_refuses_a_name_another_topic_
         db.execute("select public.add_node_alias(%s, 'Cache')", (split,))
 
     assert db.execute("select public.attach_node_by_name('PD-2', 'topic', 'train/test split')::text").fetchone()[0] == split
+
+
+# --- 그래프 G: 원칙 압축 제안 ------------------------------------------------------
+
+
+def _principle_setup(db):  # noqa: ANN001, ANN202
+    """앨리스가 팀 주제 '평가 분할'에서 거부를 세 번(한 건은 반복 2회), 프로젝트 노드에도 같은 판단들"""
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    topic = _node(db, "평가 분할", team=team)
+    project = _node(db, "pit", team=team, kind="project")
+    for i in (1, 2):
+        _team_draft(db, ALICE_GITHUB_ID, f"PD-{i}", team, age_days=4)
+        _about(db, f"PD-{i}", topic)
+        _about(db, f"PD-{i}", project)
+    db.execute("update public.decisions set repeat_count = 2 where id = 'PD-2'")
+    return team, topic, sign_in_with_github(db, ALICE_GITHUB_ID, "alice"), sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+
+
+def test_principle_candidates_count_repeats_on_topics_but_not_projects(db):
+    _, topic, alice, bob = _principle_setup(db)
+
+    with acting_as(db, "authenticated", alice):
+        rows = db.execute("select node_id::text, verdict, support, decision_ids from public.principle_candidates()").fetchall()
+    with acting_as(db, "authenticated", bob):
+        bobs = db.execute("select count(*) from public.principle_candidates()").fetchone()[0]
+
+    assert [(n, v, s, sorted(d)) for n, v, s, d in rows] == [(topic, "reject", 3, ["PD-1", "PD-2"])]
+    assert bobs == 0
+
+
+def test_compress_into_principle_creates_a_team_principle_citing_members_and_stops_suggesting(db):
+    team, topic, alice, bob = _principle_setup(db)
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", bob):
+        db.execute("select public.compress_into_principle(%s, 'reject', '평가는 시간 분할')", (topic,))
+    with acting_as(db, "authenticated", alice):
+        principle = db.execute("select public.compress_into_principle(%s, 'reject', '평가는 시간 분할로 한다')", (topic,)).fetchone()[0]
+        left = db.execute("select count(*) from public.principle_candidates()").fetchone()[0]
+
+    row = db.execute(
+        "select owner_github_id, status, visibility, team_id::text, tags, proposal from public.decisions where id = %s", (principle,)
+    ).fetchone()
+    cites = ids(db, f"select to_decision from public.decision_links where from_decision = '{principle}' and relation = 'cites' order by 1")
+    assert row == (ALICE_GITHUB_ID, "confirmed", "team", team, ["principle"], "평가는 시간 분할로 한다")
+    assert cites == ["PD-1", "PD-2"] and left == 0
+
+
+def test_dismissed_principle_is_not_suggested_again(db):
+    _, topic, alice, _ = _principle_setup(db)
+
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.dismiss_principle(%s, 'reject')", (topic,))
+        left = db.execute("select count(*) from public.principle_candidates()").fetchone()[0]
+
+    assert left == 0

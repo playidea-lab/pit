@@ -7,7 +7,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { SharedDecision } from "@/lib/decisions";
+import type { SharedDecision, Verdict } from "@/lib/decisions";
 
 export type NodeKind = "topic" | "project" | "artifact";
 export type LinkRelation = "supersedes" | "conflicts_with" | "depends_on" | "cites";
@@ -169,6 +169,24 @@ export async function listMergeCandidates(supabase: SupabaseClient): Promise<Mer
   const { data, error } = await supabase.rpc("node_merge_candidates", { max_pairs: MERGE_LIST_LIMIT });
   if (error) fail("listMergeCandidates", error);
   return (data ?? []) as MergeCandidate[];
+}
+
+/** 같은 주제에서 같은 판정을 여러 번 — 한 줄 원칙으로 압축할 후보 (그래프 G). 내 판단만. */
+export interface PrincipleCandidate {
+  node_id: string;
+  node_name: string;
+  verdict: Verdict;
+  support: number;
+  decision_ids: string[];
+  proposals: string[];
+}
+
+const PRINCIPLE_LIST_LIMIT = 10;
+
+export async function listPrincipleCandidates(supabase: SupabaseClient): Promise<PrincipleCandidate[]> {
+  const { data, error } = await supabase.rpc("principle_candidates", { max_rows: PRINCIPLE_LIST_LIMIT });
+  if (error) fail("listPrincipleCandidates", error);
+  return (data ?? []) as PrincipleCandidate[];
 }
 
 export interface TopicSummary extends GraphNode {
