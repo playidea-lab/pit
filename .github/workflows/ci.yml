@@ -106,8 +106,12 @@ jobs:
           echo "server=$(echo "$files" | grep -qE '^(pit/|Dockerfile$|fly\.toml$|pyproject\.toml$|uv\.lock$)' && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "web=$(echo "$files" | grep -q '^pithub/web/' && echo true || echo false)" >> "$GITHUB_OUTPUT"
           # 배포 비밀이 아직 없으면(포크·설정 전) 배포하지 않고 경고만 남긴다 — 뒤의 출력이 앞의 것을 덮는다
-          if [ -z "$FLY_API_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ] || [ -z "$SUPABASE_PROJECT_REF" ] || [ -z "$SUPABASE_POOLER_HOST" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "::warning::배포 설정(secrets FLY_API_TOKEN · SUPABASE_DB_PASSWORD, vars SUPABASE_PROJECT_REF · SUPABASE_POOLER_HOST · SUPABASE_ANON_KEY)이 없어 배포를 건너뜁니다"
+          missing=""
+          for name in FLY_API_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF SUPABASE_POOLER_HOST SUPABASE_ANON_KEY; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::warning::배포 설정이 비어 배포를 건너뜁니다:$missing"
             printf 'db=false\nserver=false\nweb=false\n' >> "$GITHUB_OUTPUT"
           fi
           cat "$GITHUB_OUTPUT"
