@@ -3,12 +3,26 @@ import Link from "next/link";
 import CopyBox from "@/components/CopyBox";
 import Header from "@/components/Header";
 import { getMyAccount } from "@/lib/decisions";
+import { siteOrigin } from "@/lib/origin";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
 import { listMyTeams } from "@/lib/teams";
 
 export const dynamic = "force-dynamic";
 
 const MCP_URL_ENV = "NEXT_PUBLIC_PITHUB_MCP_URL";
+// claude.ai 처럼 훅이 없는 도구의 전역 지침에 붙이는 문장 — install-hooks.sh 가 훅으로 넣는 것과 같은 뜻
+const RECORD_REMINDER =
+  "pithub가 연결돼 있으면: 내가 당신의 제안을 거부·수정하거나, 선택지 중에 고르거나, 방향을 승인하면 그 자리에서 pithub record_decision을 한 번 불러 기록해. 내 말은 그대로 인용하고 주제(about)를 붙여. '응/계속' 같은 대답과 새 요청은 기록하지 마.";
+
+/** 기록 누락 줄이기 — AI는 일에 몰두하면 기록 도구를 잊는다(개발 세션 실측 재현율 0%) */
+function Reminder({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="space-y-2 border-t border-border pt-3">
+      <p className="text-ink">기록이 빠지지 않게 (권장, 한 번)</p>
+      {children}
+    </div>
+  );
+}
 
 interface PageProps {
   searchParams: Promise<{ joined?: string }>;
@@ -34,6 +48,7 @@ export default async function ConnectPage({ searchParams }: PageProps) {
   const account = supabase ? await getMyAccount(supabase) : null;
   const teams = supabase && account ? await listMyTeams(supabase, account.github_id) : [];
   const url = process.env[MCP_URL_ENV] ?? "(설정되지 않음)";
+  const hookInstall = `curl -fsSL ${await siteOrigin()}/install-hooks.sh | sh`;
 
   return (
     <main>
@@ -66,12 +81,23 @@ export default async function ConnectPage({ searchParams }: PageProps) {
           <p>
             다음에 Claude Code를 열면 <code className="text-ink">/mcp</code> → pithub → 로그인.
           </p>
+          <Reminder>
+            <p>메시지를 보낼 때마다 AI에게 &ldquo;방금 판단이 있었으면 기록하라&rdquo;는 한 줄을 붙입니다. Codex도 함께 설치됩니다.</p>
+            <CopyBox value={hookInstall} />
+          </Reminder>
         </Tool>
 
         <Tool name="claude.ai">
           <p>
             설정 → 커넥터 → <b className="text-ink">커스텀 커넥터 추가</b> → 위 주소 붙여넣기 → 연결 → pithub 로그인.
           </p>
+          <Reminder>
+            <p>
+              claude.ai에는 훅이 없어서 지침으로 대신합니다. 설정 → 일반 → <b className="text-ink">개인 선호 사항</b>에 붙여
+              넣으세요.
+            </p>
+            <CopyBox value={RECORD_REMINDER} />
+          </Reminder>
         </Tool>
 
         <Tool name="Codex">
@@ -80,6 +106,18 @@ export default async function ConnectPage({ searchParams }: PageProps) {
           <p>
             앱이라면 Settings → MCP servers → Add server → Streamable HTTP에 위 주소.
           </p>
+          <Reminder>
+            <p>Claude Code와 같은 한 줄입니다(둘 다 있으면 한 번에 설치). Codex를 다음에 열 때 새 훅을 믿을지 물으면 허용하세요.</p>
+            <CopyBox value={hookInstall} />
+          </Reminder>
+        </Tool>
+
+        <Tool name="그 밖의 AI 도구">
+          <p>
+            MCP를 지원하는 도구면 같은 주소로 연결됩니다. 훅이 없는 도구는 전역 지침(규칙·AGENTS.md 등)에 아래 문장을
+            넣으세요.
+          </p>
+          <CopyBox value={RECORD_REMINDER} />
         </Tool>
 
         <div className="card space-y-2">
