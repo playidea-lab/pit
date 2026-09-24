@@ -5,6 +5,8 @@ on:
   push:
     branches: [main, "feature/**"]
   pull_request:
+  # 손으로 전부 다시 배포할 때 (Actions 화면 또는 `gh workflow run ci --ref main`)
+  workflow_dispatch:
 
 jobs:
   python:
@@ -69,7 +71,7 @@ jobs:
   # 를 달아 서버 배포 뒤로 미룬다 — 옛 서버가 지워진 열을 계속 쓰는 동안 저장이 깨지지 않게 (2026-09-25 consulted).
   deploy:
     needs: [python, web]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency: deploy-production
     env:
@@ -88,8 +90,8 @@ jobs:
         env:
           BEFORE: ${{ github.event.before }}
         run: |
-          # 새 브랜치 첫 push 등 이전 커밋이 없으면 전부 배포한다
-          if [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+          # 손으로 돌렸거나 이전 커밋이 없으면(새 브랜치 첫 push 등) 전부 배포한다
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ -z "$BEFORE" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
             files=$(git ls-files)
           else
             files=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
