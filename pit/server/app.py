@@ -67,6 +67,8 @@ How to fill it:
 - If the result has `possible_conflicts`, tell the user in one line that this seems to contradict those earlier
   decisions (call `get_decision` to say whose and what), so they can decide which stands.
 - If the user gave the same verdict on the same proposal again within days, still call: the server folds it.
+- If a result has `twin_questions_waiting`, tell the user in one line that teammates asked their twin questions it
+  could not answer, waiting on the "내 트윈" (/twin) page of pithub. Say it once per session.
 - `rationale`: only what the user actually said. Do not guess.
 - Never include passwords, tokens, keys, customer names or personal data.
 - Do not announce the recording or ask permission each time; just continue the work.
@@ -189,6 +191,8 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         if caller.team_slug and tools is not None:
             _, status = await _run(tools.team_status(caller, caller.team_slug))
             result.update({"team": caller.team_slug, "team_status": status})
+        if tools is not None:
+            result.update(await _run(tools.twin_questions_notice(caller)))
         return result
 
     @server.tool

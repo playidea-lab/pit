@@ -8,7 +8,9 @@ import pytest
 pytest.importorskip("fastmcp", reason="서버 extra가 설치된 환경에서만 실행")
 
 from pit.server.identity import Caller  # noqa: E402
+from pit.server.ratelimit import RateLimiter  # noqa: E402
 from pit.server.records import StoredDecision  # noqa: E402
+from pit.server.tools import DecisionTools  # noqa: E402
 from pit.server.twin import TwinService, TwinUnavailable  # noqa: E402
 from tests.fakes import InMemoryRepository  # noqa: E402
 
@@ -246,3 +248,15 @@ def test_linked_decision_joins_the_evidence_and_no_graph_falls_back_to_text():
 
     assert {e["id"] for e in linked["evidence"]} == {"PD-1", "PD-2"} and linked["basis"] == "graph"
     assert plain["basis"] == "text" and "topics" not in plain
+
+
+def test_twin_questions_notice_tells_owner_only_when_a_question_waits():
+    repository = _repository([_decision(1, "캐시를 쓴다", "reject"), _decision(2, "캐시를 쓴다 둘", "approve")])
+    tools = DecisionTools(repository, RateLimiter(lambda: 0.0), lambda: NOW)
+    bob = Caller(github_id=2002, github_login="bob", team_slug="pilab")
+    before = asyncio.run(tools.twin_questions_notice(bob))
+
+    _ask(repository, "로그인 화면을 바꾼다")
+
+    assert before == {} and asyncio.run(tools.twin_questions_notice(bob)) == {"twin_questions_waiting": 1}
+    assert asyncio.run(tools.twin_questions_notice(ALICE)) == {}

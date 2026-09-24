@@ -139,6 +139,10 @@ class DecisionRepository(Protocol):
         self, asker: int, twin: int, team_id: str | None, situation: str, proposal: str, confidence: float
     ) -> None: ...
 
+    async def pending_twin_questions(self, twin_github_id: int) -> int:
+        """트윈이 기권해 주인에게 넘어와 아직 답하지 않은 질문 수 — 주인의 세션에 알리는 데 쓴다"""
+        ...
+
     async def consenting_teams(self, team_ids: list[str]) -> set[str]:
         """외부 판정기(JEV)에 팀 결정을 보내도 된다고 소유자가 동의한 팀들"""
         ...

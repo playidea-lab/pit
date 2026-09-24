@@ -98,3 +98,16 @@ export async function listConsults(supabase: SupabaseClient, me: number): Promis
     owner_verdict: c.owner_verdict as TwinVerdict | null,
   }));
 }
+
+/**
+ * 머리말 배지용: 내 트윈이 기권해 나에게 넘어온, 아직 답하지 않은 질문 수.
+ * 배지는 보조 신호라 실패해도 화면을 막지 않는다 — 조회 오류는 /twin 화면이 그대로 드러낸다.
+ */
+export async function countPendingQuestions(supabase: SupabaseClient, me: number): Promise<number> {
+  const { count, error } = await supabase
+    .from("twin_questions")
+    .select("id", { count: "exact", head: true })
+    .eq("twin_github_id", me)
+    .is("answered_at", null);
+  return error ? 0 : (count ?? 0);
+}

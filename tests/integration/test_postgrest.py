@@ -196,6 +196,7 @@ def test_twin_answers_or_abstains_and_writes_consult_question_and_transfer(repos
     assert db.execute("select abstained from public.consult_log order by id").fetchall() == [(False,), (True,)]
     assert db.execute("select asker_github_id, twin_github_id, team_id::text from public.twin_questions").fetchall() == [(ALICE, BOB, TEAM)]
     assert db.execute("select via from public.transfers").fetchall() == [("twin",)]
+    assert (_run(repository.pending_twin_questions(BOB)), _run(repository.pending_twin_questions(ALICE))) == (1, 0)
 
 
 def test_account_lookups_membership_consent_and_projects(repository, db):

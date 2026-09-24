@@ -114,7 +114,12 @@ class DecisionTools:
                 f"팀 '{caller.team_slug}' 가입 요청을 보냈습니다. 소유자가 승인하면 이 기록은 팀 범위로 옮겨집니다. "
                 "그때까지는 본인만 봅니다."
             )
-        return result
+        return {**result, **await self.twin_questions_notice(caller)}
+
+    async def twin_questions_notice(self, caller: Caller) -> dict[str, object]:
+        """동료가 내 트윈에게 물었는데 트윈이 기권한 질문 — 주인은 웹보다 AI 세션에 있으므로 여기서 알린다"""
+        waiting = await self.repository.pending_twin_questions(caller.github_id)
+        return {"twin_questions_waiting": waiting} if waiting else {}
 
     async def _attach_graph(self, caller: Caller, decision: StoredDecision, payload: RecordDecisionInput) -> dict[str, object]:
         """결정을 그래프에 매단다. 링크와 충돌 후보는 호출자가 읽을 수 있는 결정만 가리킨다."""

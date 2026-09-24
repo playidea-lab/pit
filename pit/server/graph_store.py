@@ -168,6 +168,12 @@ class SupabaseGraphMixin:
                   "proposal": proposal, "confidence": confidence},
         )  # fmt: skip
 
+    async def pending_twin_questions(self, twin_github_id: int) -> int:
+        params = {"twin_github_id": f"eq.{twin_github_id}", "answered_at": "is.null", "select": "id", "limit": "1"}
+        response = await self._request("GET", "/twin_questions", params=params, headers={"Prefer": "count=exact"})
+        # Content-Range: "0-0/3" 또는 "*/0" — 슬래시 뒤가 전체 건수
+        return int(response.headers.get("content-range", "*/0").rsplit("/", 1)[-1])
+
     async def consenting_teams(self, team_ids: list[str]) -> set[str]:
         if not team_ids:
             return set()
