@@ -37,7 +37,7 @@ MAX_ABOUT = 6
 MAX_LINKS = 5
 MAX_NODE_NAME_CHARS = 120
 NODE_KINDS = ("topic", "project", "artifact")
-LINK_RELATIONS = ("depends_on", "conflicts_with")
+LINK_RELATIONS = ("depends_on", "conflicts_with", "cites")
 
 
 class NodeRef(BaseModel):
@@ -50,7 +50,7 @@ class NodeRef(BaseModel):
 class LinkRef(BaseModel):
     """이 결정과 다른 결정의 관계 (뒤집기는 supersedes 로 따로 받는다)"""
 
-    relation: str = Field(pattern="^(depends_on|conflicts_with)$")
+    relation: str = Field(pattern="^(depends_on|conflicts_with|cites)$")
     to: str = Field(min_length=1, max_length=80)
 
 
@@ -109,7 +109,6 @@ class StoredDecision(BaseModel):
     human_quote: str
     tags: list[str] = Field(default_factory=list)
     supersedes: list[str] = Field(default_factory=list)
-    consulted: list[dict[str, str | int]] = Field(default_factory=list)
     decided_at: datetime
     cited_count: int = 0
     repeat_count: int = 1

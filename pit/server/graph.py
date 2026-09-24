@@ -20,7 +20,8 @@ KIND_PROJECT = "project"
 # 비교용 이름에서 뺄 문자 — PostgREST 필터 문법과 부딪히는 것들. DB의 norm_name 과 같은 규칙이어야 한다.
 _NAME_SYNTAX = re.compile(r'[,(){}"\\*%]')
 # 모델이 판정을 확인하지 않고 주장한 충돌은 후보로만 둔다 — 사람이 정리함에서 확인한다
-LINK_STATUS = {"depends_on": "confirmed", "conflicts_with": "proposed"}
+# cites = 남의 판단이 이 결정의 근거가 됨 (세션 AI가 실제로 기댄 것만 보낸다 — 확인된 엣지)
+LINK_STATUS = {"depends_on": "confirmed", "conflicts_with": "proposed", "cites": "confirmed"}
 # 충돌을 찾을 때 훑는 이웃 결정 수와, 한 번에 올리는 후보 수
 CONFLICT_SCAN_LIMIT = 60
 MAX_CONFLICTS = 3

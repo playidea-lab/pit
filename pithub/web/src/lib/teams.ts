@@ -55,7 +55,6 @@ export interface TeamDecision extends SharedDecision {
   verified: boolean;
   team_id: string;
   team_slug: string;
-  consulted: { github_id: number; decision_id: string; predicted?: string }[];
   cited_count: number;
 }
 

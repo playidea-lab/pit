@@ -30,7 +30,6 @@ export interface Decision {
   human_quote: string;
   tags: string[];
   supersedes: string[];
-  consulted: { github_id: number; decision_id: string; predicted?: string }[];
   decided_at: string;
   created_at: string;
   source: Record<string, string>;

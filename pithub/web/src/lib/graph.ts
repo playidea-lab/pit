@@ -10,7 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SharedDecision } from "@/lib/decisions";
 
 export type NodeKind = "topic" | "project" | "artifact";
-export type LinkRelation = "supersedes" | "conflicts_with" | "depends_on";
+export type LinkRelation = "supersedes" | "conflicts_with" | "depends_on" | "cites";
 
 export interface GraphNode {
   id: string;
@@ -42,6 +42,7 @@ export const RELATION_LABEL: Record<LinkRelation, string> = {
   supersedes: "뒤집음",
   conflicts_with: "충돌",
   depends_on: "전제로 함",
+  cites: "근거로 삼음",
 };
 
 function fail(where: string, error: { message: string } | null): never {

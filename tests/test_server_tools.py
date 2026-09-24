@@ -797,6 +797,21 @@ def test_links_only_to_readable_decisions_and_conflicts_are_only_proposed():
     assert {(to, rel, status) for _, to, rel, status in repository.links} == {(shared, "conflicts_with", "proposed")}
 
 
+
+def test_cites_link_to_a_teammates_readable_decision_is_confirmed_and_hidden_one_is_skipped():
+    repository = _team_repository()
+    tools = _tools(repository)
+    shared = _run(tools.record_decision(BOB_IN_PILAB, _arguments(proposal="밥 공유")))["id"]
+    private = _personal(repository, _run(tools.record_decision(BOB, _arguments(proposal="밥 비공개")))["id"])
+    repository.rows = [r.model_copy(update={"status": "confirmed"}) for r in repository.rows]
+
+    result = _run(tools.record_decision(ALICE_IN_PILAB, _arguments(proposal="앨리스", links=[
+        {"relation": "cites", "to": shared}, {"relation": "cites", "to": private},
+    ])))  # fmt: skip
+
+    assert result["links_skipped"] == [private]
+    assert {(to, rel, status) for _, to, rel, status in repository.links} == {(shared, "cites", "confirmed")}
+
 def test_about_rejects_unknown_kind_and_too_many_nodes():
     tools = _tools(_team_repository())
 

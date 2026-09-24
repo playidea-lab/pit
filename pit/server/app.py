@@ -63,7 +63,8 @@ How to fill it:
 - If this decision overturns an earlier one, search first and pass its id in `supersedes`.
 - `about`: 1-3 short topic names this decision is about (e.g. "evaluation split"), plus the main file or feature
   as kind "artifact" when there is one. Reuse the exact names you saw in search results `topics` so that
-  decisions on the same subject connect. Use `links` for "depends_on" / "conflicts_with" another decision id.
+  decisions on the same subject connect. Use `links` for "depends_on" / "conflicts_with" another decision id, and
+  "cites" for a teammate's decision (from `get_decision` or `ask_twin` evidence) this decision actually relied on.
 - If the result has `possible_conflicts`, tell the user in one line that this seems to contradict those earlier
   decisions (call `get_decision` to say whose and what), so they can decide which stands.
 - If the user gave the same verdict on the same proposal again within days, still call: the server folds it.
@@ -211,7 +212,7 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         tags: Annotated[list[str] | None, Field(description='Short topic tags. Use "principle" for a rule the user wants followed from now on.')] = None,
         supersedes: Annotated[list[str] | None, Field(description="Ids of the user's earlier decisions that this one overturns (find them with search_my_decisions first).")] = None,
         about: Annotated[list[NodeRef] | None, Field(description='What this decision is about: 1-3 short topic names (kind "topic"), plus the main file/module/feature (kind "artifact") if any. Reuse names shown in search results `topics`.')] = None,
-        links: Annotated[list[LinkRef] | None, Field(description='Relations to other decisions you have seen: {"relation": "depends_on"|"conflicts_with", "to": "<decision id>"}.')] = None,
+        links: Annotated[list[LinkRef] | None, Field(description='Relations to other decisions you have seen: {"relation": "depends_on"|"conflicts_with"|"cites", "to": "<decision id>"}. "cites" = a teammate\'s decision this one relied on.')] = None,
     ) -> dict[str, object]:
         """Record one decision that would matter later: a rejection, a correction, a choice among options, or an approval that sets direction. Skip routine go-aheads."""
         arguments = {

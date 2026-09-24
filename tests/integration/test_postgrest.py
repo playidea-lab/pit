@@ -130,9 +130,12 @@ def test_nodes_resolve_per_namespace_with_filter_syntax_and_aliases(repository, 
     _run(repository.attach_nodes("PD-2", [first]))
     _run(repository.add_links("PD-2", [("PD-1", "conflicts_with", "proposed")], BOB))
     _run(repository.add_links("PD-2", [("PD-1", "conflicts_with", "proposed")], BOB))
+    _run(repository.add_links("PD-2", [("PD-1", "cites", "confirmed")], BOB))
     assert _run(repository.topics_of(["PD-1", "PD-2", "nope"])) == {"PD-1": [tricky], "PD-2": [tricky]}
     assert _run(repository.node_refs_of(["PD-1"])) == {"PD-1": [("topic", tricky)]}
-    assert _run(repository.links_of("PD-1")) == [("PD-2", "PD-1", "conflicts_with", "proposed")]
+    assert sorted(_run(repository.links_of("PD-1"))) == [
+        ("PD-2", "PD-1", "cites", "confirmed"), ("PD-2", "PD-1", "conflicts_with", "proposed"),
+    ]
     assert db.execute("select count(*) from public.decision_nodes").fetchone()[0] == 2
 
 
