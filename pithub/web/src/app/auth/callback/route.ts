@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 // 같은 사이트의 경로만: '/'로 시작하고 '//' 나 '\\' 로 시작하지 않으며, 쿼리(동의 화면의 authorization_id)는 허용한다
+const SETTINGS_PATH = "/settings";
 const SAFE_NEXT = /^\/(?![/\\])[A-Za-z0-9_\-/.~]*(\?[A-Za-z0-9_\-=&%.~]*)?$/;
 
 /**
@@ -31,6 +32,10 @@ export async function GET(request: Request) {
   const next = SAFE_NEXT.test(requested) ? requested : "/inbox";
 
   if (!code) {
+    // 설정에서 로그인 방법을 잇다가 거절된 경우(이미 다른 계정에 쓰인 GitHub 등) — 설정으로 돌려보내 알린다
+    if (searchParams.get("error") && next === SETTINGS_PATH) {
+      return NextResponse.redirect(`${origin}${SETTINGS_PATH}?link_error=1`);
+    }
     return NextResponse.redirect(`${origin}/?error=missing_code`);
   }
 

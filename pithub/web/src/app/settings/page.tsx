@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import Header from "@/components/Header";
+import LoginMethods from "@/components/LoginMethods";
 import { deleteMyAccount, exportMyData, issueToken, revokeToken } from "@/lib/account-actions";
 import { getMyAccount } from "@/lib/decisions";
 import { createServerSupabaseClient, getUser } from "@/lib/supabase-server";
@@ -27,7 +28,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export default async function SettingsPage() {
+interface PageProps {
+  searchParams: Promise<{ link_error?: string }>;
+}
+
+export default async function SettingsPage({ searchParams }: PageProps) {
   const user = await getUser();
   if (!user) redirect("/?next=/settings");
   const supabase = await createServerSupabaseClient();
@@ -38,6 +43,8 @@ export default async function SettingsPage() {
     .select("id, name, created_at, last_used_at, revoked_at")
     .order("created_at", { ascending: false });
   const newToken = (await cookies()).get("pithub_new_token")?.value;
+  const { link_error: linkError } = await searchParams;
+  const hasGitHub = (user.identities ?? []).some((i) => i.provider === "github");
 
   return (
     <main>
@@ -46,9 +53,10 @@ export default async function SettingsPage() {
         <h1 className="mb-6 text-2xl font-semibold tracking-tight text-ink">설정</h1>
 
         <Section title="계정">
-          <p className="muted text-sm">
-            GitHub <b className="text-ink">{account?.github_login ?? "-"}</b> 로 로그인돼 있습니다.
+          <p className="muted mb-4 text-sm">
+            <b className="text-ink">{account?.github_login ?? "-"}</b> 로 로그인돼 있습니다.
           </p>
+          <LoginMethods hasGitHub={hasGitHub} email={user.email ?? null} linkFailed={Boolean(linkError)} />
         </Section>
 
         <Section title={`사용량 · 최근 ${usage.days}일`}>
@@ -130,7 +138,7 @@ export default async function SettingsPage() {
           <p className="muted mb-3 text-sm">
             본인만 보던 결정, 아직 팀에 보이기 전인 결정, 검토 이력, 토큰이 지워지고 되돌릴 수 없습니다.
             <b className="text-ink"> 이미 팀에 보인 결정은 회사의 기록이라 남습니다</b> — 지우려면 팀 소유자에게 요청하세요.
-            확인을 위해 GitHub 아이디를 입력하세요.
+            확인을 위해 아이디를 입력하세요.
           </p>
           <form action={deleteMyAccount} className="flex gap-2">
             <input name="confirm" placeholder={account?.github_login ?? ""} className="input max-w-xs" />

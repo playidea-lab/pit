@@ -1093,3 +1093,22 @@ def test_dismissed_principle_is_not_suggested_again(db):
         left = db.execute("select count(*) from public.principle_candidates()").fetchone()[0]
 
     assert left == 0
+
+
+# --- 로그인 방법 잇기 ----------------------------------------------------------------
+
+
+def test_linking_github_to_an_email_account_keeps_one_account_and_makes_no_empty_github_account(db):
+    user = sign_in_with_email(db, "cm@corp.example")
+    before = db.execute("select github_id from public.profiles where id = %s", (user,)).fetchone()[0]
+
+    db.execute(
+        "insert into auth.identities (user_id, provider, provider_id, identity_data) values (%s, 'github', %s, %s)",
+        (user, str(ALICE_GITHUB_ID), psycopg.types.json.Jsonb({"user_name": "alice", "avatar_url": "https://avatars.example/a.png"})),
+    )
+
+    after = db.execute("select github_id from public.profiles where id = %s", (user,)).fetchone()[0]
+    avatar = db.execute("select avatar_url from public.accounts where github_id = %s", (before,)).fetchone()[0]
+    orphan = db.execute("select count(*) from public.accounts where github_id = %s", (ALICE_GITHUB_ID,)).fetchone()[0]
+    assert before < 0 and after == before and orphan == 0
+    assert avatar == "https://avatars.example/a.png"
