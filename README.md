@@ -107,6 +107,15 @@ cd pithub/web && npm ci && npm run lint && npm run build
 
 테스트는 합성 데이터만 쓴다. 실제 세션 기록을 테스트에 넣지 않는다.
 
+### 배포
+
+`main` 에 push 하면 CI가 시험을 통과한 뒤 바뀐 부분만 운영에 올린다 (`.github/workflows/ci.yml` 의 `deploy`).
+순서는 **DB 마이그레이션 → MCP 서버 → 웹**. 그래서 마이그레이션은 옛 서버와 함께 돌아도 깨지지 않게(확장만) 쓴다.
+열·테이블을 지우는 마이그레이션은 첫 줄을 `-- deploy: after-server` 로 시작해 서버 배포 뒤로 미룬다.
+
+필요한 설정: 저장소 Secrets `FLY_API_TOKEN` · `SUPABASE_ACCESS_TOKEN` · `SUPABASE_DB_PASSWORD`, Variables `SUPABASE_PROJECT_REF`.
+없으면 배포 단계는 경고만 남기고 건너뛴다.
+
 ## 기여할 자리
 
 - **소스 어댑터** — Codex, Gemini, Cursor 세션 기록 파서. `pit/vault/sources.py`의 `SourceAdapter`와
