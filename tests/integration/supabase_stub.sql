@@ -15,6 +15,8 @@ create schema auth;
 grant usage on schema public to anon, authenticated, service_role;
 grant usage on schema auth to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to service_role;
+-- identity 열(bigint generated always)의 시퀀스 — 서버(service_role)가 PostgREST로 행을 넣을 때 필요하다
+alter default privileges in schema public grant usage, select on sequences to service_role;
 
 create table auth.users (
     id uuid primary key,
