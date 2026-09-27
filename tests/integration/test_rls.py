@@ -1112,3 +1112,32 @@ def test_linking_github_to_an_email_account_keeps_one_account_and_makes_no_empty
     orphan = db.execute("select count(*) from public.accounts where github_id = %s", (ALICE_GITHUB_ID,)).fetchone()[0]
     assert before < 0 and after == before and orphan == 0
     assert avatar == "https://avatars.example/a.png"
+
+
+def test_removed_member_cannot_compress_or_dismiss_on_the_old_team_topic(db):
+    team = _team(db, "pilab", ALICE_GITHUB_ID)
+    _join(db, team, BOB_GITHUB_ID)
+    topic = _node(db, "평가 분할", team=team)
+    for i in (1, 2, 3):
+        _team_draft(db, BOB_GITHUB_ID, f"PD-b{i}", team, age_days=4)
+        _about(db, f"PD-b{i}", topic)
+    bob = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    db.execute("delete from public.team_members where team_id = %s and github_id = %s", (team, BOB_GITHUB_ID))
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", bob):
+        db.execute("select public.compress_into_principle(%s, 'reject', '평가는 시간 분할')", (topic,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", bob):
+        db.execute("select public.dismiss_principle(%s, 'reject')", (topic,))
+    with acting_as(db, "authenticated", bob):
+        candidates = db.execute("select count(*) from public.principle_candidates()").fetchone()[0]
+
+    assert candidates == 0
+
+
+def test_second_principle_on_the_same_topic_and_verdict_is_refused(db):
+    _, topic, alice, _ = _principle_setup(db)
+
+    with acting_as(db, "authenticated", alice):
+        db.execute("select public.compress_into_principle(%s, 'reject', '첫 원칙')", (topic,))
+    with pytest.raises(psycopg.errors.UniqueViolation), acting_as(db, "authenticated", alice):
+        db.execute("select public.compress_into_principle(%s, 'reject', '두 번째')", (topic,))
