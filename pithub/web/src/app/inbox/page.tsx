@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { VerdictBadge, formatDate } from "@/components/DecisionCard";
 import Header from "@/components/Header";
 import VerifyBar from "@/components/VerifyBar";
-import { curateNodes, curatePrinciple, resolveConflict } from "@/lib/actions";
+import { confirmMany, curateNodes, curatePrinciple, resolveConflict } from "@/lib/actions";
 import {
   getMyAccount,
   leaksVerdict,
@@ -140,9 +140,48 @@ function Conflict({ conflict }: { conflict: ConflictCandidate }) {
   );
 }
 
+// 한 섹션에 보여 주는 최대 건수 — 나머지는 목록에서. 넘치는 정리함은 아무도 안 본다.
+const SECTION_LIMIT = 10;
+
+function RecordSection({ title, hint, records }: { title: string; hint: string; records: Decision[] }) {
+  if (records.length === 0) return null;
+  const shown = records.slice(0, SECTION_LIMIT);
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+        <span className="faint text-xs">
+          {hint} · {records.length}건
+        </span>
+        <form action={confirmMany} className="ml-auto">
+          {shown.map((d) => (
+            <input key={d.id} type="hidden" name="id" value={d.id} />
+          ))}
+          <button className="btn btn-secondary h-8 px-3" title="팀 기록은 확인하면 바로 팀에 보입니다">
+            보이는 {shown.length}건 모두 맞음
+          </button>
+        </form>
+      </div>
+      <div className="space-y-3">
+        {shown.map((d) => (
+          <Item key={d.id} decision={d} />
+        ))}
+      </div>
+      {records.length > shown.length && (
+        <p className="muted mt-3 text-sm">
+          {records.length - shown.length}건 더 —{" "}
+          <Link href="/decisions?unverified=1" className="link">
+            목록에서 보기
+          </Link>
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * 정리함 — 기록은 자동으로 쌓이고 검색에 바로 쓰인다. 여기에는 사람이 봐 둘 만한 것만 온다:
- * 이번 주 표본 5건(품질 측정), 거부·수정 판정, 가림이 일어난 것. 나머지 승인 기록은 손댈 일이 없다.
+ * 이번 주 표본 5건(품질 측정), 곧 팀에 보일 기록, 이번 주의 거부·수정·가림. 나머지는 손댈 일이 없다.
  */
 export default async function TriagePage() {
   const user = await getUser();
@@ -232,35 +271,20 @@ export default async function TriagePage() {
           </div>
         ) : (
           <>
-            <div>
-              <div className="mb-3 flex items-baseline gap-3">
-                <h2 className="text-[15px] font-semibold text-ink">이번 주 표본</h2>
-                <span className="faint text-xs">무작위 {sample.length}건 · 기록 품질을 재는 데 씁니다 · 1분</span>
-              </div>
-              <div className="space-y-3">
-                {sample.map((d) => (
-                  <Item key={d.id} decision={d} />
-                ))}
-              </div>
-            </div>
-
-            {flagged.length > 0 && (
-              <div>
-                <div className="mb-3 flex items-baseline gap-3">
-                  <h2 className="text-[15px] font-semibold text-ink">봐 둘 만한 것</h2>
-                  <span className="faint text-xs">곧 팀에 보일 기록, 거부·수정, 원칙, 뒤집은 결정, 가림, 설명에 판정이 섞인 기록 · {flagged.length}건</span>
-                </div>
-                <div className="space-y-3">
-                  {flagged.map((d) => (
-                    <Item key={d.id} decision={d} />
-                  ))}
-                </div>
+            {sample.length === 0 && flagged.length === 0 && (
+              <div className="empty">
+                <p className="text-ink">지금 봐 둘 것이 없습니다.</p>
               </div>
             )}
-
+            <RecordSection title="이번 주 표본" hint="이번 주 기록 중 무작위 · 기록 품질을 재는 데 씁니다 · 1분" records={sample} />
+            <RecordSection
+              title="봐 둘 만한 것"
+              hint="곧 팀에 보일 기록, 이번 주의 거부·수정·원칙·뒤집은 결정·가림"
+              records={flagged}
+            />
             {rest > 0 && (
               <p className="muted text-sm">
-                그 밖의 승인 기록 {rest}건은 손댈 일 없이 이미 검색에 쓰이고 있습니다.{" "}
+                그 밖의 기록 {rest}건은 손댈 일 없이 이미 검색에 쓰이고 있습니다.{" "}
                 <Link href="/decisions?unverified=1" className="link">
                   목록 보기
                 </Link>

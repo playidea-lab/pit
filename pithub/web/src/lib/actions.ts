@@ -92,6 +92,36 @@ export async function reviewDecision(form: FormData): Promise<void> {
   revalidatePath(`/d/${id}`);
 }
 
+const MAX_BULK_CONFIRM = 50;
+
+/** 정리함 한 섹션을 한 번에 확인 — 따로 고칠 것이 없으면 한 번 누르고 끝 (팀 초안은 곧바로 팀에 보인다) */
+export async function confirmMany(form: FormData): Promise<void> {
+  const supabase = await createServerSupabaseClient();
+  const ids = form.getAll("id").map(String).filter(Boolean).slice(0, MAX_BULK_CONFIRM);
+  if (ids.length === 0) return;
+  const { data, error } = await supabase
+    .from("decisions")
+    .update({ status: "confirmed" })
+    .in("id", ids)
+    .eq("status", "draft")
+    .select("id, owner_github_id");
+  if (error) throw new Error(`한꺼번에 확인 실패: ${error.message}`);
+  const events = (data ?? []).map((row) => ({
+    decision_id: row.id as string,
+    owner_github_id: row.owner_github_id as number,
+    action: "confirmed",
+    edited_fields: [],
+    seconds: 0,
+    origin: "web-bulk",
+  }));
+  if (events.length > 0) {
+    const { error: logError } = await supabase.from("review_events").insert(events);
+    if (logError) throw new Error(`검토 기록 실패: ${logError.message}`);
+  }
+  revalidatePath("/inbox");
+  revalidatePath("/decisions");
+}
+
 /** 팀에서 빼기 — 팀에 보이기 전(3일 유예 안)에만 된다. 보인 뒤에는 DB가 거부한다. */
 export async function withdrawFromTeam(form: FormData): Promise<void> {
   const supabase = await createServerSupabaseClient();

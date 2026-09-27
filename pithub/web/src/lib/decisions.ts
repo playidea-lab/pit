@@ -100,11 +100,23 @@ export function leaksVerdict(decision: Pick<Decision, "situation" | "proposal">)
   return VERDICT_WORDS.test(decision.situation) || VERDICT_WORDS.test(decision.proposal);
 }
 
-export function needsAttention(decision: Decision): boolean {
+/** 정리함이 "봐 둘 만한 것"으로 올리는 기간 — 그보다 오래된 기록은 이미 쓰이고 있고, 목록에서 찾는다 */
+export const ATTENTION_WINDOW_DAYS = 7;
+
+function recentlyCreated(decision: Pick<Decision, "created_at">, now: Date): boolean {
+  return now.getTime() - new Date(decision.created_at).getTime() <= ATTENTION_WINDOW_DAYS * MS_PER_DAY;
+}
+
+/**
+ * 사람이 봐 둘 만한 기록. 팀에 이미 보인 것은 회사의 기록이라 더 할 일이 없고, 오래된 것은 올리지 않는다
+ * — 넘치는 정리함은 아무도 안 본다 (2026-09-27 파일럿 전 실측: 팀 초안 전부가 올라와 수백 건).
+ */
+export function needsAttention(decision: Decision, now: Date = new Date()): boolean {
+  // 곧 팀에 보일 초안 — 기다리는 독자가 있고, 뺄 수 있는 시간이 얼마 안 남았다
+  if (decision.visibility === "team" && !isTeamShared(decision, now)) return true;
+  if (!recentlyCreated(decision, now)) return false;
   const redacted = Object.values(decision.redactions).some((n) => n > 0);
   return (
-    // 팀 범위 초안은 확인해야 팀에 보인다 — 기다리는 독자가 있다
-    decision.visibility === "team" ||
     decision.verdict === "reject" ||
     decision.verdict === "modify" ||
     redacted ||
@@ -116,13 +128,15 @@ export function needsAttention(decision: Decision): boolean {
 
 /** 이번 주의 표본 — 같은 주에는 같은 5건이 나오도록 id와 주차로 결정적으로 고른다 */
 export function weeklySample(decisions: Decision[], now: Date = new Date()): Decision[] {
+  // 표본은 이번 주 기록의 품질을 잰다 — 옛 백필이 섞이면 잴 것이 달라진다
+  const recent = decisions.filter((d) => recentlyCreated(d, now));
   const week = `${now.getUTCFullYear()}-${Math.floor((now.getTime() / 86400000 + 4) / 7)}`;
   const score = (id: string) => {
     let h = 2166136261;
     for (const ch of `${id}:${week}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
     return h;
   };
-  return [...decisions].sort((a, b) => score(a.id) - score(b.id)).slice(0, WEEKLY_SAMPLE_SIZE);
+  return [...recent].sort((a, b) => score(a.id) - score(b.id)).slice(0, WEEKLY_SAMPLE_SIZE);
 }
 
 export async function listMyDecisions(
