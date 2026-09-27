@@ -84,6 +84,8 @@ jobs:
       SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
       SUPABASE_POOLER_HOST: ${{ vars.SUPABASE_POOLER_HOST }}
       SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+      # 웹이 연결 안내에 보여 주는 MCP 서버 주소 (빌드 때 박힌다 — 빠지면 연결 명령이 빈 주소로 나간다)
+      PITHUB_MCP_URL: ${{ vars.PITHUB_MCP_URL }}
       DEPLOYED_TAG: deployed/prod
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +127,7 @@ jobs:
           missing=""
           [ "$HAS_FLY_TOKEN" = "true" ] || missing="$missing FLY_API_TOKEN"
           [ "$HAS_DB_PASSWORD" = "true" ] || missing="$missing SUPABASE_DB_PASSWORD"
-          for name in SUPABASE_PROJECT_REF SUPABASE_POOLER_HOST SUPABASE_ANON_KEY; do
+          for name in SUPABASE_PROJECT_REF SUPABASE_POOLER_HOST SUPABASE_ANON_KEY PITHUB_MCP_URL; do
             [ -n "${!name}" ] || missing="$missing $name"
           done
           # 배포 설정이 비었으면(포크·설정 전) 배포하지 않고 경고만 남긴다 — 뒤의 출력이 앞의 것을 덮는다
@@ -172,7 +174,8 @@ jobs:
         run: |
           flyctl deploy --remote-only \
             --build-arg NEXT_PUBLIC_SUPABASE_URL="https://$SUPABASE_PROJECT_REF.supabase.co" \
-            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            --build-arg NEXT_PUBLIC_PITHUB_MCP_URL="$PITHUB_MCP_URL"
       - name: Mark deployed
         if: steps.changed.outputs.ready == 'true'
         run: |

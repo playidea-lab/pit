@@ -47,7 +47,7 @@ export default async function ConnectPage({ searchParams }: PageProps) {
   const supabase = user ? await createServerSupabaseClient() : null;
   const account = supabase ? await getMyAccount(supabase) : null;
   const teams = supabase && account ? await listMyTeams(supabase, account.github_id) : [];
-  const url = process.env[MCP_URL_ENV] ?? "(설정되지 않음)";
+  const url = process.env[MCP_URL_ENV] || "(설정되지 않음)";
   const hookInstall = `curl -fsSL ${await siteOrigin()}/install-hooks.sh | sh`;
 
   return (

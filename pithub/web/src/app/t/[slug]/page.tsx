@@ -176,7 +176,7 @@ export default async function TeamPage({ params }: PageProps) {
   const isOwner = me.role === "owner";
   const principles = decisions.filter((d) => d.tags.includes("principle"));
   const recent = decisions.filter((d) => !d.tags.includes("principle")).slice(0, RECENT_SIZE);
-  const mcpUrl = process.env[MCP_URL_ENV] ?? "";
+  const mcpUrl = process.env[MCP_URL_ENV] || "(설정되지 않음)";
   const url = teamMcpUrl(mcpUrl, slug);
   const newToken = isOwner ? (await cookies()).get(INVITE_COOKIE)?.value : undefined;
   const inviteUrl = newToken ? `${await siteOrigin()}/join/${newToken}` : null;
