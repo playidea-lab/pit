@@ -7,6 +7,7 @@ import pytest
 
 pytest.importorskip("fastmcp", reason="서버 extra가 설치된 환경에서만 실행")
 
+from pit.server.errors import RepositoryError  # noqa: E402
 from pit.server.identity import Caller  # noqa: E402
 from pit.server.ratelimit import RateLimiter  # noqa: E402
 from pit.server.records import StoredDecision  # noqa: E402
@@ -260,3 +261,18 @@ def test_twin_questions_notice_tells_owner_only_when_a_question_waits():
 
     assert before == {} and asyncio.run(tools.twin_questions_notice(bob)) == {"twin_questions_waiting": 1}
     assert asyncio.run(tools.twin_questions_notice(ALICE)) == {}
+
+
+def test_record_decision_still_reports_recorded_when_the_twin_question_count_fails():
+    repository = _repository([])
+
+    async def broken(_github_id: int) -> int:
+        raise RepositoryError("count failed")
+
+    repository.pending_twin_questions = broken
+    tools = DecisionTools(repository, RateLimiter(lambda: 0.0), lambda: NOW)
+    arguments = {"situation": "평가", "proposal": "무작위 분할", "human_quote": "아니 시간 분할", "verdict": "reject"}
+
+    result = asyncio.run(tools.record_decision(ALICE, arguments))
+
+    assert result["status"] == "recorded" and "twin_questions_waiting" not in result

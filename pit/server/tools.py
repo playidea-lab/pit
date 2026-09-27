@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from pydantic import ValidationError
 
+from pit.server.errors import RepositoryError
 from pit.server.graph import GraphReader, GraphWriter, readable_for
 from pit.server.identity import Caller
 from pit.server.ratelimit import RateLimiter
@@ -117,8 +118,15 @@ class DecisionTools:
         return {**result, **await self.twin_questions_notice(caller)}
 
     async def twin_questions_notice(self, caller: Caller) -> dict[str, object]:
-        """동료가 내 트윈에게 물었는데 트윈이 기권한 질문 — 주인은 웹보다 AI 세션에 있으므로 여기서 알린다"""
-        waiting = await self.repository.pending_twin_questions(caller.github_id)
+        """동료가 내 트윈에게 물었는데 트윈이 기권한 질문 — 주인은 웹보다 AI 세션에 있으므로 여기서 알린다
+
+        부가 정보라 실패해도 도구를 실패시키지 않는다: 기록은 이미 저장됐는데 "저장되지 않았다"고 답하면 안 된다.
+        """
+        try:
+            waiting = await self.repository.pending_twin_questions(caller.github_id)
+        except RepositoryError:
+            logger.warning("트윈 질문 수 조회 실패 — 알림 없이 계속", extra={"github_id": caller.github_id})
+            return {}
         return {"twin_questions_waiting": waiting} if waiting else {}
 
     async def _attach_graph(self, caller: Caller, decision: StoredDecision, payload: RecordDecisionInput) -> dict[str, object]:
