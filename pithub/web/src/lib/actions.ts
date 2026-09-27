@@ -12,6 +12,10 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import type { Verdict } from "@/lib/decisions";
 
 const VERDICTS: readonly Verdict[] = ["approve", "modify", "reject"];
+
+function isVerdict(value: string): value is Verdict {
+  return (VERDICTS as readonly string[]).includes(value);
+}
 const EDITABLE_TEXT_FIELDS = ["situation", "proposal", "rationale", "human_quote"] as const;
 const MAX_TEXT_CHARS = 4000;
 const MAX_TOPIC_NAME_CHARS = 120;
@@ -131,7 +135,7 @@ export async function curatePrinciple(form: FormData): Promise<void> {
   const supabase = await createServerSupabaseClient();
   const node = text(form, "node_id");
   const verdict = text(form, "verdict");
-  if (!VERDICTS.includes(verdict as Verdict)) throw new Error("알 수 없는 판정입니다.");
+  if (!isVerdict(verdict)) throw new Error("알 수 없는 판정입니다.");
   if (text(form, "action") === "dismiss") {
     const { error } = await supabase.rpc("dismiss_principle", { node, dismissed_verdict: verdict });
     if (error) throw new Error(`원칙 후보 넘기기 실패: ${error.message}`);

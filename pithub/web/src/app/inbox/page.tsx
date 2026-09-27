@@ -110,14 +110,14 @@ function Principle({ candidate }: { candidate: PrincipleCandidate }) {
         에서 {candidate.support}번 {VERDICT_WORD[candidate.verdict]}했습니다
       </p>
       <ul className="muted list-disc space-y-0.5 pl-5 text-xs">
-        {candidate.proposals.map((p) => (
-          <li key={p}>{p}</li>
+        {candidate.proposals.map((p, i) => (
+          <li key={candidate.decision_ids[i] ?? i}>{p}</li>
         ))}
       </ul>
-      <input name="statement" placeholder="한 줄 원칙 (예: 평가는 늘 시간 순으로 나눈다)" className="input" />
+      <input name="statement" required placeholder="한 줄 원칙 (예: 평가는 늘 시간 순으로 나눈다)" className="input" />
       <div className="flex flex-wrap gap-2">
         <button name="action" value="compress" className="btn btn-primary h-8 px-3">원칙으로 만들기</button>
-        <button name="action" value="dismiss" className="btn btn-ghost h-8 px-3">그때그때 다름</button>
+        <button name="action" value="dismiss" formNoValidate className="btn btn-ghost h-8 px-3">그때그때 다름</button>
       </div>
     </form>
   );

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import AuthButton from "@/components/AuthButton";
 import { getMyAccount } from "@/lib/decisions";
+import { logServerError } from "@/lib/log";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { countPendingQuestions } from "@/lib/twin";
 
@@ -24,9 +25,15 @@ const NAV = [
 
 /** 동료가 내 트윈에게 물었는데 트윈이 답하지 못한 질문 — 주인이 답해야 트윈이 배운다 */
 async function pendingTwinQuestions(): Promise<number> {
-  const supabase = await createServerSupabaseClient();
-  const account = await getMyAccount(supabase);
-  return account ? countPendingQuestions(supabase, account.github_id) : 0;
+  try {
+    const supabase = await createServerSupabaseClient();
+    const account = await getMyAccount(supabase);
+    return account ? await countPendingQuestions(supabase, account.github_id) : 0;
+  } catch (error) {
+    // 배지는 보조 신호라 실패해도 화면을 막지 않는다
+    logServerError("Header.pendingTwinQuestions", error);
+    return 0;
+  }
 }
 
 // 좁은 화면에서는 메뉴만 가로로 밀어 본다 — 초대 링크는 대개 폰의 메신저에서 열린다

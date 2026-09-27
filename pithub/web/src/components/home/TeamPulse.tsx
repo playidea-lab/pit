@@ -45,10 +45,10 @@ export default async function TeamPulse({ supabase, team }: { supabase: Supabase
         </Link>
       </div>
       <div className="flex flex-wrap gap-x-10 gap-y-3">
-        <Metric label="이번 주 팀 판단" value={thisWeek} hint="최근 7일 팀에 보이게 된 판단" />
+        <Metric label="이번 주 팀 판단" value={thisWeek} hint="팀에 보이는 판단 중 최근 7일에 내려진 것" />
         <Metric label="건너간 판단" value={transfers} hint="최근 7일 동료의 AI가 다른 사람의 판단을 가져간 횟수" />
-        <Metric label="원칙" value={principles} hint="팀에 보인 원칙" />
-        <Metric label="판단을 남긴 사람" value={authors} hint="팀에 보인 판단의 작성자 수" />
+        <Metric label="원칙" value={principles} hint="최근 팀 판단 50건 안의 원칙" />
+        <Metric label="판단을 남긴 사람" value={authors} hint="최근 팀 판단 50건의 작성자 수" />
       </div>
       {topics.length > 0 && (
         <div className="flex flex-wrap gap-2">

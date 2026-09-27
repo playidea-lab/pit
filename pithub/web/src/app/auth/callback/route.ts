@@ -23,6 +23,17 @@ function publicOrigin(request: Request): string {
   return `${proto}://${host}`;
 }
 
+/**
+ * 링크가 통하지 않았을 때 갈 곳. 흔한 원인: 만료·이미 쓴 링크, 요청한 브라우저가 아닌 곳(다른 기기·메신저 안
+ * 브라우저)에서 연 링크. 로그인 화면이 코드 입력을 안내한다. 설정에서 로그인 방법을 잇다 실패하면 설정으로
+ * (이미 로그인한 사람을 로그인 화면으로 보내면 곧바로 튕겨 이유가 사라진다).
+ */
+function failureRedirect(origin: string, next: string): string {
+  if (next === SETTINGS_PATH) return `${origin}${SETTINGS_PATH}?link_error=1`;
+  const retry = new URLSearchParams({ error: "link", next });
+  return `${origin}/login?${retry.toString()}`;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const origin = publicOrigin(request);
@@ -32,9 +43,8 @@ export async function GET(request: Request) {
   const next = SAFE_NEXT.test(requested) ? requested : "/inbox";
 
   if (!code) {
-    // 설정에서 로그인 방법을 잇다가 거절된 경우(이미 다른 계정에 쓰인 GitHub 등) — 설정으로 돌려보내 알린다
-    if (searchParams.get("error") && next === SETTINGS_PATH) {
-      return NextResponse.redirect(`${origin}${SETTINGS_PATH}?link_error=1`);
+    if (searchParams.get("error")) {
+      return NextResponse.redirect(failureRedirect(origin, next));
     }
     return NextResponse.redirect(`${origin}/?error=missing_code`);
   }
@@ -42,9 +52,7 @@ export async function GET(request: Request) {
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
-    // 흔한 원인: 링크를 요청한 브라우저가 아닌 곳(다른 기기·메신저 안 브라우저)에서 열었다 — 코드로 다시 들어오게 한다
-    const retry = new URLSearchParams({ error: "link", next });
-    return NextResponse.redirect(`${origin}/login?${retry.toString()}`);
+    return NextResponse.redirect(failureRedirect(origin, next));
   }
   // 계정 보장: 지웠다가 다시 온 사람도 계정이 이어지게 (트리거는 첫 가입 때만 돈다)
   const { error: accountError } = await supabase.rpc("ensure_my_account");

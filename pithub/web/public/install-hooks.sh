@@ -20,13 +20,20 @@ HOOK_CMD=$(jq -rn --arg t "$TEXT" '"jq -nc --arg t " + ($t|@sh) + " '"'"'{hookSp
 install_into() {
   file="$1"
   label="$2"
-  if [ -f "$file" ] && jq -e --arg m "$MARKER" '[.hooks.UserPromptSubmit[]?.hooks[]?.command | select(contains($m))] | length > 0' "$file" >/dev/null 2>&1; then
+  if [ -f "$file" ] && ! jq -e . "$file" >/dev/null 2>&1; then
+    echo "✗ $label: $file 이 올바른 JSON이 아니라 건드리지 않았습니다. 고친 뒤 다시 실행하세요." >&2
+    return
+  fi
+  # command 가 없는 항목(prompt 형 훅 등)이 섞여 있어도 확인이 깨지지 않게
+  if [ -f "$file" ] && jq -e --arg m "$MARKER" '[.hooks.UserPromptSubmit[]?.hooks[]? | (.command? // "") | select(contains($m))] | length > 0' "$file" >/dev/null; then
     echo "· $label: 이미 설치돼 있습니다 ($file)"
     return
   fi
   [ -f "$file" ] || echo '{}' > "$file"
-  cp "$file" "$file.bak-pithub"
+  # 원본 백업은 처음 한 번만 — 다시 실행해도 원래 파일이 남는다
+  [ -f "$file.bak-pithub" ] || cp "$file" "$file.bak-pithub"
   tmp="$file.tmp-pithub"
+  trap 'rm -f "$tmp"' EXIT
   jq --arg c "$HOOK_CMD" '.hooks.UserPromptSubmit = ((.hooks.UserPromptSubmit // []) + [{"hooks":[{"type":"command","command":$c,"timeout":5}]}])' "$file" > "$tmp"
   mv "$tmp" "$file"
   echo "✓ $label: 설치했습니다 ($file)"
