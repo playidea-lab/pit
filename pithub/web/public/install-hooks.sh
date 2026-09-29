@@ -22,6 +22,7 @@ install_into() {
   label="$2"
   if [ -f "$file" ] && ! jq -e . "$file" >/dev/null 2>&1; then
     echo "✗ $label: $file 이 올바른 JSON이 아니라 건드리지 않았습니다. 고친 뒤 다시 실행하세요." >&2
+    failed=1
     return
   fi
   # command 가 없는 항목(prompt 형 훅 등)이 섞여 있어도 확인이 깨지지 않게
@@ -40,6 +41,7 @@ install_into() {
 }
 
 found=0
+failed=0
 if [ -d "$HOME/.claude" ]; then
   install_into "$HOME/.claude/settings.json" "Claude Code"
   found=1
@@ -51,6 +53,9 @@ if [ -d "$HOME/.codex" ]; then
 fi
 if [ "$found" = 0 ]; then
   echo "Claude Code(~/.claude)나 Codex(~/.codex)를 찾지 못했습니다. 도구를 한 번 실행한 뒤 다시 시도하세요." >&2
+  exit 1
+fi
+if [ "$failed" = 1 ]; then
   exit 1
 fi
 echo "끝. 새 세션부터 적용됩니다."

@@ -120,6 +120,7 @@ export async function confirmMany(form: FormData): Promise<void> {
   }
   revalidatePath("/inbox");
   revalidatePath("/decisions");
+  revalidatePath("/");
 }
 
 /** 팀에서 빼기 — 팀에 보이기 전(3일 유예 안)에만 된다. 보인 뒤에는 DB가 거부한다. */

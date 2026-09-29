@@ -86,7 +86,8 @@ export async function listUnverified(supabase: SupabaseClient): Promise<Decision
     .from("decisions")
     .select("*")
     .eq("status", "draft")
-    .order("decided_at", { ascending: false })
+    // 들어온 순서로 — 과거 날짜로 백필한 기록이 한꺼번에 들어와도 곧 팀에 보일 초안이 목록 밖으로 밀리지 않게
+    .order("created_at", { ascending: false })
     .limit(TRIAGE_PAGE_SIZE * 4);
   if (error) fail("listUnverified", error);
   return (data ?? []) as Decision[];
@@ -128,7 +129,7 @@ export function needsAttention(decision: Decision, now: Date = new Date()): bool
 
 /** 이번 주의 표본 — 같은 주에는 같은 5건이 나오도록 id와 주차로 결정적으로 고른다 */
 export function weeklySample(decisions: Decision[], now: Date = new Date()): Decision[] {
-  // 표본은 이번 주 기록의 품질을 잰다 — 옛 백필이 섞이면 잴 것이 달라진다
+  // 표본은 이번 주에 들어온 기록의 품질을 잰다 — 오래전에 들어와 이미 쓰이는 기록은 뺀다
   const recent = decisions.filter((d) => recentlyCreated(d, now));
   const week = `${now.getUTCFullYear()}-${Math.floor((now.getTime() / 86400000 + 4) / 7)}`;
   const score = (id: string) => {

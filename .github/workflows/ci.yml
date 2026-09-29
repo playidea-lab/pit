@@ -71,7 +71,7 @@ jobs:
   # 취소된 대기 실행 · 시험 실패로 건너뛴 push · 실패한 배포의 변경도 다음 배포에 실린다.
   # 순서: DB 확장 → 서버 → 웹. 열·테이블을 지우는(contract) 마이그레이션은 첫 줄에 `-- deploy: after-server`
   # 를 달아 서버 배포 뒤로 미룬다 — 옛 서버가 지워진 열을 계속 쓰는 동안 저장이 깨지지 않게 (2026-09-25 consulted).
-  # 확장과 contract 가 한 배포에 섞이면 순서를 지킬 수 없으니 배포를 멈추고 따로 push 하게 한다.
+  # 운영 DB에 아직 없는 마이그레이션에 확장과 contract 가 섞이면 순서를 지킬 수 없으니 배포를 멈춘다.
   deploy:
     needs: [python, web]
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
@@ -99,6 +99,12 @@ jobs:
           HAS_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD != '' }}
         run: |
           base=$(git rev-parse -q --verify "refs/tags/$DEPLOYED_TAG" || true)
+          # 이미 더 새 커밋이 배포됐는데 옛 실행을 다시 돌리면 운영이 뒤로 간다 — 아무것도 하지 않는다
+          if [ -n "$base" ] && [ "$base" != "$GITHUB_SHA" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$base"; then
+            echo "::warning::더 새 커밋($base)이 이미 배포돼 있어 이 실행은 배포하지 않습니다"
+            printf 'db=false\nserver=false\nweb=false\nready=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # 손으로 돌렸거나, 성공한 배포가 없거나, 그 커밋이 지금 기록에 없으면(강제 push) 전부 배포한다
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ -z "$base" ] || ! git merge-base --is-ancestor "$base" "$GITHUB_SHA"; then
             echo "기준: 전체"
@@ -107,20 +113,10 @@ jobs:
             echo "기준: $base"
             files=$(git diff --name-only "$base" "$GITHUB_SHA")
           fi
+          # 어떤 마이그레이션을 어떤 순서로 적용할지는 뒤에서 운영 DB에 "아직 없는 것"을 보고 정한다
           migrations=$(echo "$files" | grep '^pithub/supabase/migrations/.*\.sql$' || true)
-          contract=0
-          expand=0
-          for f in $migrations; do
-            [ -f "$f" ] || continue
-            if head -1 "$f" | grep -q '^-- deploy: after-server'; then contract=$((contract + 1)); else expand=$((expand + 1)); fi
-          done
-          if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ] && [ -n "$base" ] && [ "$contract" -gt 0 ] && [ "$expand" -gt 0 ]; then
-            echo "::error::확장 마이그레이션 $expand 개와 contract(after-server) $contract 개가 한 배포에 섞였습니다. 따로 push 하세요."
-            exit 1
-          fi
           {
-            echo "db=$([ $((contract + expand)) -gt 0 ] && echo true || echo false)"
-            echo "contract=$([ "$contract" -gt 0 ] && echo true || echo false)"
+            echo "db=$([ -n "$migrations" ] && echo true || echo false)"
             echo "server=$(echo "$files" | grep -qE '^(pit/|Dockerfile$|fly\.toml$|pyproject\.toml$|uv\.lock$)' && echo true || echo false)"
             echo "web=$(echo "$files" | grep -q '^pithub/web/' && echo true || echo false)"
           } >> "$GITHUB_OUTPUT"
@@ -153,8 +149,28 @@ jobs:
           password=$(jq -rn --arg v "$SUPABASE_DB_PASSWORD" '$v|@uri')
           echo "::add-mask::$password"
           echo "DB_URL=postgresql://postgres.$SUPABASE_PROJECT_REF:$password@$SUPABASE_POOLER_HOST:5432/postgres" >> "$GITHUB_ENV"
+      - name: Pending migrations
+        id: pending
+        if: steps.changed.outputs.db == 'true'
+        working-directory: pithub
+        run: |
+          # 운영 DB에 아직 없는 마이그레이션만 본다 — 전체 배포라도 이미 적용된 옛 contract 파일에 끌려가지 않는다
+          pending=$(supabase migration list --db-url "$DB_URL" --output-format json | jq -r '.migrations[] | select((.remote // "") == "") | .local')
+          contract=0
+          expand=0
+          for version in $pending; do
+            f=$(ls supabase/migrations/"$version"_*.sql)
+            if head -1 "$f" | grep -q '^-- deploy: after-server'; then contract=$((contract + 1)); else expand=$((expand + 1)); fi
+          done
+          echo "적용 안 된 마이그레이션: 확장 $expand · contract $contract"
+          if [ "$contract" -gt 0 ] && [ "$expand" -gt 0 ]; then
+            echo "::error::확장 마이그레이션과 contract(after-server)가 함께 적용 대기 중입니다. 따로 배포하세요."
+            exit 1
+          fi
+          echo "expand=$([ "$expand" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "contract=$([ "$contract" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - name: DB migrations (expand — before the server)
-        if: steps.changed.outputs.db == 'true' && steps.changed.outputs.contract == 'false'
+        if: steps.pending.outputs.expand == 'true'
         working-directory: pithub
         run: supabase db push --yes --db-url "$DB_URL"
       - name: MCP server
@@ -163,7 +179,7 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: flyctl deploy --remote-only
       - name: DB migrations (contract — after the server)
-        if: steps.changed.outputs.db == 'true' && steps.changed.outputs.contract == 'true'
+        if: steps.pending.outputs.contract == 'true'
         working-directory: pithub
         run: supabase db push --yes --db-url "$DB_URL"
       - name: Web
