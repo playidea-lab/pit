@@ -62,7 +62,6 @@ def test_pithub_client_builds_postgrest_filters_and_encodes_timezone() -> None:
     from datetime import datetime, timezone
 
     import httpx
-
     from git_watcher.work_reports import PithubClient
     seen: list[httpx.Request] = []
 
