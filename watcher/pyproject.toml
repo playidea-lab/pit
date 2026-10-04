@@ -1,0 +1,27 @@
+[project]
+name = "git-watcher"
+version = "0.1.0"
+description = "GitLab 커밋을 계정별로 요약해 메일로 보내는 브리퍼"
+readme = "README.md"
+authors = [
+    { name = "PI Lab" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "holidays>=0.105",
+    "httpx>=0.28.1",
+    "openpyxl>=3.1.5",
+    "pydantic-settings>=2.15.0",
+]
+
+[project.scripts]
+git-watcher = "git_watcher:main"
+
+[build-system]
+requires = ["uv_build>=0.9.16,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

@@ -1141,3 +1141,42 @@ def test_second_principle_on_the_same_topic_and_verdict_is_refused(db):
         db.execute("select public.compress_into_principle(%s, 'reject', '첫 원칙')", (topic,))
     with pytest.raises(psycopg.errors.UniqueViolation), acting_as(db, "authenticated", alice):
         db.execute("select public.compress_into_principle(%s, 'reject', '두 번째')", (topic,))
+
+
+def _work_report(conn, report_id: str, owner_github_id: int, team_id: str | None) -> None:  # noqa: ANN001
+    """MCP 서버(service_role)가 작업 보고를 받는 경로"""
+    conn.execute(
+        """insert into public.work_reports (id, owner_github_id, team_id, kind, task, task_kind, commit_sha)
+           values (%s, %s, %s, 'commit', '합성 작업', 'feature', 'abcdef1')""",
+        (report_id, owner_github_id, team_id),
+    )
+
+
+def test_work_reports_are_visible_to_author_and_team_owner_only(db):
+    """작업 보고는 평가 근거 — 본인과 팀 소유자만 읽고, 같은 팀 동료도 읽지 못한다 (대표 결정 2026-10-04)."""
+    carol_github_id = 3003
+    owner = sign_in_with_github(db, BOB_GITHUB_ID, "bob")
+    author = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    peer = sign_in_with_github(db, carol_github_id, "carol")
+    team = _team(db, "work-team", BOB_GITHUB_ID)
+    _join(db, team, ALICE_GITHUB_ID)
+    _join(db, team, carol_github_id)
+    _work_report(db, "W-alice1", ALICE_GITHUB_ID, team)
+
+    def visible(user) -> list[str]:  # noqa: ANN001
+        with acting_as(db, "authenticated", user):
+            return [r[0] for r in db.execute("select id from public.work_reports").fetchall()]
+
+    assert visible(author) == ["W-alice1"]
+    assert visible(owner) == ["W-alice1"]
+    assert visible(peer) == []
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "anon"):
+        db.execute("select count(*) from public.work_reports")
+
+
+def test_work_reports_cannot_be_written_from_the_web(db):
+    """쓰기는 서버만 한다 — 로그인한 사용자도 직접 넣거나 고치지 못한다 (사전 추정을 사후에 못 바꾸게)."""
+    author = sign_in_with_github(db, ALICE_GITHUB_ID, "alice")
+    _work_report(db, "W-alice2", ALICE_GITHUB_ID, None)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), acting_as(db, "authenticated", author):
+        db.execute("update public.work_reports set expected_manual_hours = 99 where id = 'W-alice2'")

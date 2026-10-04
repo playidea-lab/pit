@@ -1,0 +1,6 @@
+.env
+.state/
+logs/
+.venv/
+__pycache__/
+people.json

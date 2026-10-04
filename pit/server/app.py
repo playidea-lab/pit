@@ -31,6 +31,7 @@ from pit.server.settings import AUTH_SUPABASE, GITHUB_SCOPES, ServerSettings
 from pit.server.tokencache import CachedTokenVerifier
 from pit.server.tools import DEFAULT_SEARCH_LIMIT, DecisionTools, ToolFailure
 from pit.server.twin import TWIN_ASKS_PER_HOUR, TwinService, TwinUnavailable
+from pit.server.work import WorkToolFailure, WorkTools
 
 SERVER_NAME = "pithub"
 # Supabase 프로젝트의 JWT 서명 (JWKS 로 확인: ES256 비대칭 키)
@@ -182,6 +183,17 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
             raise ToolError(STORAGE_NOT_READY)
         return tools
 
+    work_tools = (
+        WorkTools(repository, RateLimiter(time.monotonic), lambda: datetime.now(timezone.utc))
+        if repository is not None
+        else None
+    )
+
+    def ready_work() -> WorkTools:
+        if work_tools is None:
+            raise ToolError(STORAGE_NOT_READY)
+        return work_tools
+
     @server.tool
     async def whoami() -> dict[str, str | int | None]:
         """Show which pithub account this connection is signed in as, and its team status if connected through a team address."""
@@ -225,6 +237,51 @@ def build_server(settings: ServerSettings, repository: DecisionRepository | None
         return await _run(ready().record_decision(await _caller(), arguments))
 
     @server.tool
+    async def report_start(
+        task: Annotated[str, Field(description="Short name of the unit of work you are starting, e.g. 'survey soft delete'.")],
+        task_kind: Annotated[str, Field(description="feature | fix | research | ops | docs | refactor")],
+        intent: Annotated[str, Field(description="What you were asked to do, summarized in 1-2 sentences. No raw prompt text.")] = "",
+        position: Annotated[str, Field(description="Where this sits in the larger work: which goal or feature it is a part of.")] = "",
+        implements: Annotated[list[str] | None, Field(description="Ids of decisions or goals this work carries out (find them with search_my_decisions).")] = None,
+        expected_manual_hours: Annotated[float | None, Field(description="Your estimate BEFORE starting: hours a skilled developer would need by hand, without AI.")] = None,
+        expected_agent_minutes: Annotated[float | None, Field(description="Your estimate BEFORE starting: minutes you expect this to take with you doing the work.")] = None,
+        repo: Annotated[str | None, Field(description="Repository, e.g. 'group/name'.")] = None,
+        client: Annotated[str | None, Field(description="Which app this is: claude-code, codex, copilot, ...")] = None,
+    ) -> dict[str, object]:
+        """Call when you start a unit of work that will end in a commit. Records the expected size up front; it cannot be changed later. Pass the returned id to report_commit."""
+        arguments = {"task": task, "task_kind": task_kind, "intent": intent, "position": position,
+                     "implements": implements or [], "expected_manual_hours": expected_manual_hours,
+                     "expected_agent_minutes": expected_agent_minutes, "repo": repo, "client": client}  # fmt: skip
+        return await _run(ready_work().report_start(await _caller(), arguments))
+
+    @server.tool
+    async def report_commit(
+        task: Annotated[str, Field(description="Short name of the unit of work this commit belongs to.")],
+        task_kind: Annotated[str, Field(description="feature | fix | research | ops | docs | refactor")],
+        commit_sha: Annotated[str, Field(description="The commit hash you just made.")],
+        atomic: Annotated[bool, Field(description="Is this commit one logical change? Be honest; a split is often better.")],
+        message_ok: Annotated[bool, Field(description="Does the commit message say what changed and why?")],
+        start_id: Annotated[str | None, Field(description="Id returned by report_start for this work, if you called it.")] = None,
+        intent: Annotated[str, Field(description="What was asked and what you did, in 1-2 sentences. No raw prompt text.")] = "",
+        position: Annotated[str, Field(description="Where this sits in the larger work.")] = "",
+        implements: Annotated[list[str] | None, Field(description="Ids of decisions or goals this commit carries out.")] = None,
+        atomic_note: Annotated[str, Field(description="If not atomic: what should have been split.")] = "",
+        message_note: Annotated[str, Field(description="If the message falls short: what is missing.")] = "",
+        principles_kept: Annotated[list[str] | None, Field(description="Team principles this commit follows (ids or short names).")] = None,
+        principles_missed: Annotated[list[str] | None, Field(description="Team principles this commit does not follow.")] = None,
+        expected_manual_hours: Annotated[float | None, Field(description="Hours a skilled developer would need by hand, without AI, for this commit.")] = None,
+        repo: Annotated[str | None, Field(description="Repository, e.g. 'group/name'.")] = None,
+        client: Annotated[str | None, Field(description="Which app this is: claude-code, codex, copilot, ...")] = None,
+    ) -> dict[str, object]:
+        """Call right after you make a commit. Reports where it fits, whether it is atomic and well described. It is a claim; the team verifies it against the diff and activity."""
+        arguments = {"task": task, "task_kind": task_kind, "commit_sha": commit_sha, "atomic": atomic,
+                     "message_ok": message_ok, "start_id": start_id, "intent": intent, "position": position,
+                     "implements": implements or [], "atomic_note": atomic_note, "message_note": message_note,
+                     "principles_kept": principles_kept or [], "principles_missed": principles_missed or [],
+                     "expected_manual_hours": expected_manual_hours, "repo": repo, "client": client}  # fmt: skip
+        return await _run(ready_work().report_commit(await _caller(), arguments))
+
+    @server.tool
     async def search_my_decisions(
         query: Annotated[str, Field(description="Words to look for in this user's confirmed past decisions.")],
         limit: Annotated[int, Field(description="Maximum results.")] = DEFAULT_SEARCH_LIMIT,
@@ -261,7 +318,7 @@ async def _run(operation: Awaitable[ResultT]) -> ResultT:
     """도구의 실패를 MCP 클라이언트가 이해하는 오류로 옮긴다"""
     try:
         return await operation
-    except ToolFailure as e:
+    except (ToolFailure, WorkToolFailure) as e:
         raise ToolError(str(e)) from e
     except RepositoryError as e:
         raise ToolError("pithub 저장소에 닿지 못했습니다. 기록은 저장되지 않았습니다.") from e

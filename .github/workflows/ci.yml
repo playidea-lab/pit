@@ -46,6 +46,19 @@ jobs:
       - name: Wheel contains bundled prompts
         run: uv run pytest -q -m slow
 
+  watcher:
+    # watcher/ 는 별도 패키지 (git 커밋·에이전트 활동 요약 → 보고). 루트 테스트와 섞이지 않는다
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: watcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uvx ruff check src tests --line-length 120
+      - run: uv run pytest -q
+
   web:
     runs-on: ubuntu-latest
     defaults:
