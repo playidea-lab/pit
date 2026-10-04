@@ -1,0 +1,11 @@
+{
+  "names": {
+    "alice": "앨리스",
+    "bob": "밥"
+  },
+  "exclude": ["root", "ghost", "ceo"],
+  "github": {
+    "alice-gh": "alice"
+  },
+  "github_exclude": ["former-member"]
+}

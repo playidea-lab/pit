@@ -95,6 +95,13 @@ pit login                               # 웹 설정에서 발급한 토큰
 pit pull && pit audit mcp               # MCP 기록 감사
 ```
 
+## watcher/ (작업 실행 쪽)
+
+결정이 "무엇을 하기로 했나"라면 watcher 는 "그걸 어떻게 실행했나"를 본다. 사내 GitLab·GitHub 커밋과
+에이전트 활동(Claude Code·Codex 텔레메트리, 요약만)을 사람·일감 단위로 모아 대표에게 일일·월간 보고를 보내고,
+에이전트가 `report_start`/`report_commit` 으로 남긴 작업 보고를 독립 근거로 검증한다. 별도 패키지 — 자세한 건
+[`watcher/README.md`](watcher/README.md).
+
 ## 개발
 
 ```bash
