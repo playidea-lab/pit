@@ -178,6 +178,14 @@ class InMemoryRepository:
     async def find_team(self, slug: str) -> str | None:
         return self.teams.get(slug)
 
+    async def insert_work_report(self, report) -> None:  # noqa: ANN001
+        self._maybe_fail()
+        self.work_reports = getattr(self, "work_reports", []) + [report]
+
+    async def get_work_report(self, owner_github_id: int, report_id: str):  # noqa: ANN201
+        return next((r for r in getattr(self, "work_reports", [])
+                     if r.id == report_id and r.owner_github_id == owner_github_id), None)
+
     async def request_join(self, team_id: str, github_id: int) -> None:
         self.join_requests.add((team_id, github_id))
 

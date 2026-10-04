@@ -15,6 +15,7 @@ from pit.server.errors import RepositoryError
 from pit.server.graph_store import SupabaseGraphMixin
 from pit.server.identity import Caller
 from pit.server.records import TEAM_SHARE_GRACE, WRITE_EXCLUDE, StoredDecision, normalize_text
+from pit.server.work import StoredWorkReport
 
 if TYPE_CHECKING:
     from pit.server.graph import Namespace
@@ -366,6 +367,17 @@ class SupabaseRepository(SupabaseGraphMixin):
     async def find_team(self, slug: str) -> str | None:
         rows = (await self._request("GET", "/teams", params={"slug": f"eq.{slug}", "select": "id", "limit": "1"})).json()
         return str(rows[0]["id"]) if rows else None
+
+    # --- 작업 보고 (work.py) ---
+
+    async def insert_work_report(self, report: StoredWorkReport) -> None:
+        await self._request("POST", "/work_reports", headers={"Prefer": "return=minimal"},
+                            json=report.model_dump(mode="json"))
+
+    async def get_work_report(self, owner_github_id: int, report_id: str) -> StoredWorkReport | None:
+        params = {"id": f"eq.{report_id}", "owner_github_id": f"eq.{owner_github_id}", "limit": "1"}
+        rows = (await self._request("GET", "/work_reports", params=params)).json()
+        return StoredWorkReport.model_validate(rows[0]) if rows else None
 
     async def request_join(self, team_id: str, github_id: int) -> None:
         await self._request(

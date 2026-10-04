@@ -79,4 +79,4 @@ def test_build_server_exposes_whoami_tool(monkeypatch):
     server = server_app.build_server(load_settings())
     tools = asyncio.run(server.get_tools())
 
-    assert set(tools) == {"whoami", "record_decision", "search_my_decisions", "get_decision"}
+    assert set(tools) == {"whoami", "record_decision", "search_my_decisions", "get_decision", "report_start", "report_commit"}
