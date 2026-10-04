@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     github_api_url: str = "https://api.github.com"
     github_token: SecretStr | None = None
     github_owners: list[str] = Field(default_factory=list)
+    # pithub (작업 보고 검증). 서버 키는 팀 보고를 읽는 데만 쓴다
+    pithub_url: str = ""
+    pithub_service_key: SecretStr | None = None
     # --backfill 에 --who 가 없을 때 쓰는 계정 (세션 종료 훅용)
     backfill_who: str = ""
 

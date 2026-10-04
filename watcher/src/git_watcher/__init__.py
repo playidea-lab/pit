@@ -8,14 +8,14 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from git_watcher import backfill, evaluate_report, sources, telemetry
+from git_watcher import backfill, evaluate_report, sources, telemetry, work_reports
 from git_watcher.calendar_kr import first_workday, is_workday, previous_month
 from git_watcher.config import Settings
 from git_watcher.gitlab import Account, GitLabClient, split_by_day
 from git_watcher.identity import build_index
 from git_watcher.mailer import send_mail
 from git_watcher.monthly_report import build_monthly, to_html, to_text, write_xlsx
-from git_watcher.people import load_people
+from git_watcher.people import load_github_logins, load_people
 from git_watcher.report import Briefing, Day, Row
 from git_watcher.summarize import Summarizer, fallback_assessment
 
@@ -62,6 +62,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--collector", action="store_true", help="에이전트 텔레메트리 수집기를 띄운다")
     parser.add_argument("--backfill", metavar="JSONL", help="Claude Code 대화 기록을 요약 이벤트로 소급 기록")
     parser.add_argument("--who", help="--backfill 때 기록할 계정 (예: 이메일)")
+    parser.add_argument("--work-reports", action="store_true", help="pithub 작업 보고를 커밋과 대조해 출력 (--hours 기간)")
     parser.add_argument("--date", metavar="YYYY-MM-DD", help="그날 정기 보고를 재현한다 (전날~그날 보고 시각)")
     return parser.parse_args(argv)
 
@@ -108,6 +109,25 @@ def build_briefing(settings: Settings, since: datetime, until: datetime, use_llm
         if rows:
             days.append(Day(day, rows))
     return Briefing(since=since, until=until, days=days)
+
+
+def run_work_reports(settings: Settings, now: datetime, hours: int, use_llm: bool) -> None:
+    if not (settings.pithub_url and settings.pithub_service_key):
+        raise SystemExit("PITHUB_URL 과 PITHUB_SERVICE_KEY 가 필요합니다.")
+    since = now - timedelta(hours=hours)
+    with GitLabClient(settings.gitlab_url, settings.gitlab_token.get_secret_value()) as gl:
+        index = build_index(gl, gl.human_users(), since, settings.state_dir)
+        accounts = sources.collect_all(settings, gl, since, now, index)
+    with work_reports.PithubClient(settings.pithub_url, settings.pithub_service_key.get_secret_value()) as ph:
+        reports = ph.reports(since, now)
+        logins = ph.logins(sorted({r["owner_github_id"] for r in reports}))
+        github_map = load_github_logins()
+        who_of = {gid: github_map.get(login.lower(), f"github:{login}") for gid, login in logins.items()}
+        people = work_reports.verify(accounts, reports, who_of, make_summarizer(settings) if use_llm else None)
+        ids = sorted({i for r in reports for i in (r.get("implements") or [])})
+        groups = work_reports.by_decision(people, ph.decision_titles(ids))
+    names, _ = load_people()
+    sys.stdout.write(work_reports.render_text(people, groups, names) + "\n")
 
 
 def run_evaluate(settings: Settings, year: int, month: int, dry_run: bool) -> None:
@@ -177,6 +197,9 @@ def run(argv: list[str]) -> None:
     args = parse_args(argv)
     settings = Settings()
     now = datetime.now(ZoneInfo(settings.timezone))
+    if args.work_reports:
+        run_work_reports(settings, now, args.hours or settings.default_lookback_hours, use_llm=not args.no_llm)
+        return
     if args.backfill:
         who = args.who or settings.backfill_who
         if not who:
